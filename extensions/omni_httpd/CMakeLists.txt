@@ -25,6 +25,9 @@ add_postgresql_extension(
         TESTS_REQUIRE omni_ext
         REGRESS http role_name)
 
+# Using C11 for atomics
+set_property(TARGET omni_httpd PROPERTY C_STANDARD 11)
+
 target_link_libraries(omni_httpd libh2o-evloop libpgaug libomnisql libgluepg_stc dynpgext metalang99)
 
 # Disable full macro expansion backtraces for Metalang99.

@@ -149,13 +149,13 @@ void prepare_share_fd() {
   h2o_socket_read_start(sock, on_accept);
 }
 
-static Latch *latch;
+static omni_httpd_latch *latch;
 
 static bool shutdown_worker = false;
 void worker_shutdown() {
   shutdown_worker = true;
   close(socket_fd);
-  SetLatch(latch);
+  SetLatch(&latch->latch);
 }
 
 /**
@@ -174,7 +174,7 @@ void reload() {
 
   // This is to ensure that if the reload is requested during the initial wait, we're setting
   // the latch we're on
-  SetLatch(latch);
+  SetLatch(&latch->latch);
 
   worker_reload = true;
 }
@@ -214,8 +214,8 @@ void master_worker(Datum db_oid) {
   BackgroundWorkerUnblockSignals();
   BackgroundWorkerInitializeConnectionByOid(db_oid, InvalidOid, 0);
 
-  latch = (Latch *)dynpgext_lookup_shmem(LATCH);
-  OwnLatch(latch);
+  latch = (omni_httpd_latch *)dynpgext_lookup_shmem(LATCH);
+  OwnLatch(&latch->latch);
 
   // Start the transaction
   SetCurrentStatementStartTimestamp();
@@ -235,6 +235,15 @@ void master_worker(Datum db_oid) {
   SPI_connect();
 
   while (!shutdown_worker) {
+
+    // The configuration is coming at this transaction ID.
+    // If it is InvalidTransactionId (zero), then any transaction is fine (which would be the latest
+    // committed).
+    // This is used by reload_configuration when it is invoked as a trigger within the transaction
+    // and is effectively telling the worker to wait until this transaction ID is available.
+    StaticAssertExpr(InvalidTransactionId == 0, "InvalidTransactionId is assumed to be zero");
+    TransactionId txid = atomic_exchange(&latch->txid, InvalidTransactionId);
+
     // We clear this list every time to prepare an up-to-date version
     cvec_fd_clear(&sockets);
 
@@ -254,9 +263,14 @@ void master_worker(Datum db_oid) {
     // Get listeners
     while (worker_reload) {
       worker_reload = false;
-      if (SPI_execute("SELECT listen.addr, listen.port FROM omni_httpd.listeners, "
-                      "unnest(omni_httpd.listeners.listen) AS listen",
-                      false, 0) == SPI_OK_SELECT) {
+      // If freezing of the configuration row occurs between the logic in
+      // `reload_configuration` and this query, which is typically very short, then this
+      // will not pick the configuration row.
+      if (SPI_execute_with_args("SELECT listen.addr, listen.port FROM omni_httpd.listeners, "
+                                "unnest(omni_httpd.listeners.listen) AS listen WHERE "
+                                "xmin::text::integer >= $1::text::integer",
+                                1, (Oid[1]){XIDOID}, (Datum[1]){txid}, (char *)"  ", false,
+                                0) == SPI_OK_SELECT) {
         TupleDesc tupdesc = SPI_tuptable->tupdesc;
         SPITupleTable *tuptable = SPI_tuptable;
         cset_port ports = cset_port_init();
@@ -323,15 +337,20 @@ void master_worker(Datum db_oid) {
       if (port_ready) {
         break;
       }
-      (void)WaitLatch(latch, WL_LATCH_SET | WL_TIMEOUT | WL_EXIT_ON_PM_DEATH, 1000L,
+      (void)WaitLatch(&latch->latch, WL_LATCH_SET | WL_TIMEOUT | WL_EXIT_ON_PM_DEATH, 1000L,
                       PG_WAIT_EXTENSION);
-      ResetLatch(latch);
+      ResetLatch(&latch->latch);
       if (shutdown_worker) {
         SPI_finish();
-        DisownLatch(latch);
+        DisownLatch(&latch->latch);
         return;
       }
     }
+
+    // Unless txid was overwritten, set it to `InvalidTransactionId` to
+    // ensure that any `xmin` is now valid.
+    atomic_compare_exchange_strong(&latch->txid, &txid, InvalidTransactionId);
+
     HandleMainLoopInterrupts();
 
     // Start HTTP workers if they aren't already
@@ -364,5 +383,5 @@ void master_worker(Datum db_oid) {
   }
   SPI_finish();
   AbortCurrentTransaction();
-  DisownLatch(latch);
+  DisownLatch(&latch->latch);
 }
