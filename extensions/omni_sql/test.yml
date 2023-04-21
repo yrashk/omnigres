@@ -1,0 +1,94 @@
+instances:
+    default:
+        init:
+        - create extension omni_sql
+tests:
+
+- name: deparse
+  query: select 'select * from t where v != 1'::omni_sql.statement
+  results:
+  - statement: SELECT * FROM t WHERE v <> 1
+
+- name: parameterized?
+  query: select omni_sql.is_parameterized('select 1');
+  results:
+  - is_parameterized: f
+
+- name: parameterized?
+  query: select omni_sql.is_parameterized('select $1');
+  results:
+  - is_parameterized: t
+
+- name: valid
+  query: select omni_sql.is_valid('select'::omni_sql.statement)
+  results:
+  - is_valid: t
+
+- name: an invalid table
+  query: select omni_sql.is_valid('select * from no_such_table_exists'::omni_sql.statement)
+  results:
+  - is_valid: f
+
+- name: parameters
+  query: select omni_sql.is_valid('select $1'::omni_sql.statement);
+  results:
+  - is_valid: f
+
+- name: parameters (one is invalid)
+  query: select omni_sql.is_valid('select; select $1'::omni_sql.statement);
+  results:
+  - is_valid: f
+
+- name: CTE append
+  query: select omni_sql.add_cte(omni_sql.add_cte('select', 'a', 'select 0'), 'b', 'select 1')
+  results:
+  - add_cte: WITH a AS (SELECT 0), b AS (SELECT 1) SELECT
+
+- name: CTE prepend
+  query: select omni_sql.add_cte(omni_sql.add_cte('select', 'a', 'select 0'), 'b', 'select 1', prepend => true)
+  results:
+  - add_cte: WITH b AS (SELECT 1), a AS (SELECT 0) SELECT
+
+#    -- Prepend
+#    select
+#    omni_sql.add_cte(
+#    omni_sql.add_cte('select', 'a', 'select 0'), 'b', 'select 1', prepend => true);
+#    add_cte
+#    ----------------------------------------------
+#    WITH b AS (select 1), a AS (select 0) select
+#    (1 row)
+#
+#    -- Recursive
+#    select omni_sql.add_cte('select', 'a', 'select 0', recursive => true);
+#    add_cte
+#    ---------------------------------------
+#    WITH RECURSIVE a AS (select 0) select
+#    (1 row)
+#
+#    -- INSERT
+#    select
+#    omni_sql.add_cte(
+#    omni_sql.add_cte('INSERT INTO t VALUES (1)', 'a', 'select 0'), 'b', 'select 1');
+#    add_cte
+#    ----------------------------------------------------------------
+#    WITH a AS (select 0), b AS (select 1) INSERT INTO t VALUES (1)
+#    (1 row)
+#
+#    -- update
+#    select
+#    omni_sql.add_cte(
+#    omni_sql.add_cte('update t set a = 1', 'a', 'select 0'), 'b', 'select 1');
+#    add_cte
+#    ----------------------------------------------------------
+#    WITH a AS (select 0), b AS (select 1) update t set a = 1
+#    (1 row)
+#
+#    -- DELETE
+#    select
+#    omni_sql.add_cte(
+#    omni_sql.add_cte('delete from t', 'a', 'select 0'), 'b', 'select 1');
+#    add_cte
+#    -----------------------------------------------------
+#    WITH a AS (select 0), b AS (select 1) delete from t
+#    (1 row)
+
