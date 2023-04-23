@@ -1,0 +1,54 @@
+instances:
+  default:
+    init:
+    - create extension omni_types
+
+tests:
+
+# Unit type
+
+- name: making unit type
+  query: select omni_types.unit()
+  results:
+  - unit: ''
+
+- name: unit type size
+  query: select pg_column_size(omni_types.unit())
+  results:
+  - pg_column_size: 1
+
+- name: unit type character in
+  query: select ''::omni_types.unit
+  results:
+  - unit: ''
+
+- name: unit type character in/out
+  query: select ''::omni_types.unit::text
+  results:
+  - text: ''
+
+- name: binary send
+  query: select omni_types.unit()
+  binary: results
+  results:
+  - unit: 0x
+
+- name: binary receive
+  query: select $1::omni_types.unit
+  binary: params
+  params:
+  - 0x
+  results:
+  - unit: ''
+
+- name: binary superfluous receive
+  query: select $1::omni_types.unit
+  binary: params
+  params:
+  - 0x1234
+  success: false
+  error:
+    severity: ERROR
+    message: superfluous data
+
+# Sum type

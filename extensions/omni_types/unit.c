@@ -76,6 +76,10 @@ Datum unit_recv(PG_FUNCTION_ARGS) {
   if (PG_ARGISNULL(0)) {
     PG_RETURN_NULL();
   }
+  StringInfo info = (StringInfo)PG_GETARG_POINTER(0);
+  if (info->len != 0) {
+    ereport(ERROR, errmsg("superfluous data"));
+  }
   PG_RETURN_CHAR(0);
 }
 
