@@ -24,7 +24,7 @@ add_postgresql_extension(
         SCHEMA omni_sql
         RELOCATABLE false
         SCRIPTS omni_sql--0.1.sql
-        SOURCES omni_sql.c
+        SOURCES omni_sql.c extended_sql.c
         REGRESS deparse cte parameterized validity
 )
 

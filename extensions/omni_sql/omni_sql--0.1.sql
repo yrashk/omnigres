@@ -42,3 +42,8 @@ as
 'is_valid'
     language c strict
                immutable;
+
+create function extended_sql(statement text, pipe boolean default false) returns statement
+as
+'MODULE_PATHNAME'
+    language c;

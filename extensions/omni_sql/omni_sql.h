@@ -23,4 +23,7 @@ bool omni_sql_is_parameterized(List *stmts);
 
 bool omni_sql_is_valid(List *stmts, char **error);
 
+List *omni_sql_parse_statement(char *statement);
+char *omni_sql_deparse_statement(List *stmts);
+
 #endif // OMNI_SQL_H
