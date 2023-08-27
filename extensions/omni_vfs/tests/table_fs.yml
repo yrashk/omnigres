@@ -1,0 +1,34 @@
+instances:
+  default:
+    init:
+    - create extension omni_vfs cascade
+
+tests:
+
+- name: list table_fs
+  steps:
+  - name: create file system
+    query: select omni_vfs.table_fs('test')
+  - name: populate files
+    query: |
+      insert into omni_vfs.table_fs_files (filesystem_id, filename, kind)
+      values 
+      ((omni_vfs.table_fs('test')).id, '{README.md}', 'file'),
+      ((omni_vfs.table_fs('test')).id, '{test,file}', 'file')
+  - name: list files
+    query: select * from omni_vfs.list(omni_vfs.table_fs('test'), '') order by name asc
+    results:
+    - name: README.md
+      kind: file
+    - name: test
+      kind: dir
+  - name: list files in a dir
+    query: select * from omni_vfs.list(omni_vfs.table_fs('test'), 'test') order by name asc
+    results:
+    - name: file
+      kind: file
+  - name: list file
+    query: select * from omni_vfs.list(omni_vfs.table_fs('test'), 'README.md') order by name asc
+    results:
+    - name: README.md
+      kind: file

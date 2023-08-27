@@ -18,39 +18,43 @@ tests:
 
 - name: can list files in a directory
   query: |
-    select * from omni_vfs.list(omni_vfs.local_fs('../../../../extensions/omni_vfs/tests'), '')
-    order by name
+    select * from omni_vfs.list(omni_vfs.local_fs('../../../../extensions/omni_vfs/tests/fixture'), '')
+    order by name asc
   results:
+  - kind: file
+    name: common
   - name: empty
     kind: dir
   - kind: file
-    name: local_fs.yml
+    name: local_fs
 
 - name: can list a file
-  query: select * from omni_vfs.list(omni_vfs.local_fs('../../../../extensions/omni_vfs/tests'), 'local_fs.yml')
+  query: select * from omni_vfs.list(omni_vfs.local_fs('../../../../extensions/omni_vfs/tests/fixture'), 'local_fs') order by name asc
   results:
   - kind: file
-    name: local_fs.yml
+    name: local_fs
 
 - name: list skips a non-existent file
-  query: select * from omni_vfs.list(omni_vfs.local_fs('../../../../extensions/omni_vfs/tests'), 'local_fs_does_not_exist.yml')
+  query: select * from omni_vfs.list(omni_vfs.local_fs('../../../../extensions/omni_vfs/tests/fixture'), 'local_fs_does_not_exist')
   results: [ ]
 
 - name: recursively list
   query: |
-    select * from omni_vfs.list_recursively(omni_vfs.local_fs('../../../../extensions/omni_vfs/tests'), '.')
-    order by name
+    select * from omni_vfs.list_recursively(omni_vfs.local_fs('../../../../extensions/omni_vfs/tests/fixture'), '.')
+    order by name asc
   results:
+  - kind: file
+    name: common
   - name: empty
     kind: dir
   - name: empty/.keepme
     kind: file
   - kind: file
-    name: local_fs.yml
+    name: local_fs
 
 - name: recursive listing respects path
   query: |
-    select * from omni_vfs.list_recursively(omni_vfs.local_fs('../../../../extensions/omni_vfs/tests'), 'empty')
+    select * from omni_vfs.list_recursively(omni_vfs.local_fs('../../../../extensions/omni_vfs/tests/fixture'), 'empty')
     order by name
   results:
   - name: .keepme
