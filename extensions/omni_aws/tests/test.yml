@@ -1,0 +1,8 @@
+instance:
+  init:
+  - create extension omni_aws cascade
+
+
+tests:
+
+- select true 
