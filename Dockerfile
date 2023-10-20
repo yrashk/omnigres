@@ -45,7 +45,7 @@ RUN git config --global --add safe.directory '*'
 # PostgreSQL build
 FROM builder AS postgres-build
 COPY docker/CMakeLists.txt /omni/CMakeLists.txt
-COPY cmake/FindPostgreSQL.cmake docker/PostgreSQLExtension.cmake /omni/cmake/
+COPY cmake/FindPostgreSQL.cmake cmake/OpenSSL.cmake docker/PostgreSQLExtension.cmake /omni/cmake/
 WORKDIR /build
 RUN cmake -DCMAKE_BUILD_TYPE=${BUILD_TYPE} -DPG=${PG} -DCMAKE_BUILD_PARALLEL_LEVEL=${BUILD_PARALLEL_LEVEL} /omni
 
@@ -59,7 +59,7 @@ RUN make -j ${BUILD_PARALLEL_LEVEL} all
 RUN make package
 
 # plrust build
-FROM ghcr.io/omnigres/postgres-16 AS plrust
+FROM postgres:${PG}-${DEBIAN_VER_PG}  AS plrust
 ARG PLRUST_VERSION
 ENV PLRUST_VERSION=${PLRUST_VERSION}
 ARG PG
@@ -85,7 +85,7 @@ RUN PG_VER=${PG%.*} && . "$HOME/.cargo/env" && cd plrust/plrust && \
     cargo pgrx package --features "pg${PG_VER} trusted"
 
 # Official slim PostgreSQL build
-FROM ghcr.io/omnigres/postgres-16 AS pg-slim
+FROM postgres:${PG}-${DEBIAN_VER_PG} AS pg-slim
 ARG PG
 ENV PG=${PG}
 ENV POSTGRES_DB=omnigres

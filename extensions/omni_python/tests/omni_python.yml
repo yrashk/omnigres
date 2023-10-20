@@ -1,3 +1,4 @@
+$schema: "https://raw.githubusercontent.com/omnigres/omnigres/master/pg_yregress/schema.json"
 instance:
   config:
     shared_preload_libraries: */env/OMNI_EXT_SO
@@ -32,6 +33,7 @@ tests:
   steps:
   - query: select * from omni_python.create_functions($1)
     params:
+    #language=Python
     - |
       from omni_python import pg, log 
       
@@ -46,6 +48,7 @@ tests:
   steps:
   - query: select * from omni_python.create_functions($1)
     params:
+    #language=Python
     - |
       from omni_python import pg, log 
       
@@ -60,6 +63,7 @@ tests:
 - name: execute
   query: select omni_python.execute($1)
   params:
+  #language=Python
   - |
     from omni_python import log
     log.notice("hello")
