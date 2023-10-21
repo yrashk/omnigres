@@ -16,5 +16,5 @@ add_postgresql_extension(
         VERSION 0.1
         SCHEMA omni_aws
         RELOCATABLE false
-        REQUIRES omni_httpc pgcrypto
+        REQUIRES omni_httpc pgcrypto omni_xml
         SCRIPTS omni_aws--0.1.sql)
