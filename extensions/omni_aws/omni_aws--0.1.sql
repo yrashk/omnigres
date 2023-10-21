@@ -68,12 +68,12 @@ returns text as $$
 						'AWS4-HMAC-SHA256 Credential=' || access_key_id || '/' 
 						|| to_char((ts8601 AT TIME ZONE 'UTC'::text), 'YYYYMMDD'::text) ||'/' || region || '/' || service 
 						|| '/aws4_request, SignedHeaders=host;x-amz-content-sha256;x-amz-date, Signature='
-						|| hash_string_to_sign(
+						|| omni_aws.hash_string_to_sign(
 							'AWS4-HMAC-SHA256', 
 							ts8601, 
 							region, 
 							service, 
-							hash_canonical_request(
+							omni_aws.hash_canonical_request(
 								'GET',
 								'/',
 								'',
