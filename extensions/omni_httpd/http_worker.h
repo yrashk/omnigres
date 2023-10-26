@@ -12,6 +12,8 @@
 
 #include <libgluepg_stc.h>
 
+#define VoidPtr(x) x
+
 /**
  * @brief Each listener has a context
  *
@@ -109,7 +111,7 @@ static cvec_fd_fd accept_fds(char *socket_name);
  * @brief Number of fields in http_request type
  *
  */
-#define REQUEST_PLAN_PARAMS 5
+#define REQUEST_PLAN_PARAMS 6
 /**
  * @brief Parameter index in a prepared query
  *
@@ -142,6 +144,29 @@ static cvec_fd_fd accept_fds(char *socket_name);
  */
 #define REQUEST_PLAN_HEADERS 4
 
+/**
+ * @brief WebSocket client key parameter index
+ *
+ */
+#define REQUEST_PLAN_WEBSOCKET_CLIENT_KEY 5
+
+/**
+ * @brief Number of fields in websocket message type
+ *
+ */
+#define WEBSOCKET_PLAN_PARAMS 1
+/**
+ * @brief Parameter index in a prepared query
+ *
+ */
+#define WEBSOCKET_PLAN_PARAM(x) ML99_STRINGIFY(ML99_INC(x))
+
+/**
+ * @brief Body parameter index
+ *
+ */
+#define WEBSOCKET_PLAN_BODY 0
+
 static int handler(request_message_t *msg);
 
 static h2o_evloop_t *handler_event_loop;
@@ -149,5 +174,6 @@ static h2o_evloop_t *handler_event_loop;
 #define HTTP_OUTCOME_RESPONSE 0
 #define HTTP_OUTCOME_ABORT 1
 #define HTTP_OUTCOME_PROXY 2
+#define HTTP_OUTCOME_UPGRADE_TO_WEBSOCKET 3
 
 #endif // OMNIGRES_HTTP_WORKER_H

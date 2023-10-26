@@ -320,7 +320,8 @@ void http_worker(Datum db_oid) {
               "$" REQUEST_PLAN_PARAM(REQUEST_PLAN_PATH) " as path, "
               "$" REQUEST_PLAN_PARAM(REQUEST_PLAN_QUERY_STRING) " as query_string, "
               "$" REQUEST_PLAN_PARAM(REQUEST_PLAN_BODY) " as body, "
-              "$" REQUEST_PLAN_PARAM(REQUEST_PLAN_HEADERS) " as headers "
+              "$" REQUEST_PLAN_PARAM(REQUEST_PLAN_HEADERS) " as headers, "
+              "$" REQUEST_PLAN_PARAM(REQUEST_PLAN_WEBSOCKET_CLIENT_KEY) " as websocket_client_key "
               // clang-format on
           );
 
@@ -343,6 +344,7 @@ void http_worker(Datum db_oid) {
                                                 [REQUEST_PLAN_PATH] = TEXTOID,
                                                 [REQUEST_PLAN_QUERY_STRING] = TEXTOID,
                                                 [REQUEST_PLAN_BODY] = BYTEAOID,
+                                                [REQUEST_PLAN_WEBSOCKET_CLIENT_KEY] = TEXTOID,
                                                 [REQUEST_PLAN_HEADERS] = http_header_array_oid(),
                                             });
 
@@ -572,6 +574,26 @@ try_connect:
   return result;
 }
 
+PG_FUNCTION_INFO_V1(websocket_send);
+
+static request_message_t *current_ws_msg;
+
+Datum websocket_send(PG_FUNCTION_ARGS) {
+  //  wslay_event_queue_msg(current_ws_msg->websocket_conn->ws_ctx);
+  PG_RETURN_VOID();
+}
+
+static int websocket_handler(request_message_t *msg) {
+  const struct wslay_event_on_msg_recv_arg *wsmsg = msg->websocket_message;
+  SPIPlanPtr plan = msg->websocket_on_message_plan;
+  current_ws_msg = msg;
+  int ret = SPI_execute_plan(
+      plan,
+      (Datum[WEBSOCKET_PLAN_PARAMS]){[WEBSOCKET_PLAN_BODY] = PointerGetDatum(
+                                         cstring_to_text_with_len(wsmsg->msg, wsmsg->msg_length))},
+      (char[WEBSOCKET_PLAN_PARAMS]){' '}, false, 0);
+}
+
 static int handler(request_message_t *msg) {
   pthread_mutex_lock(&msg->mutex);
   h2o_req_t *req = msg->req;
@@ -581,6 +603,11 @@ static int handler(request_message_t *msg) {
     free(msg);
     goto release;
   }
+  if (msg->websocket_message != NULL) {
+    websocket_handler(msg);
+    goto release;
+  }
+
   listener_ctx *lctx = H2O_STRUCT_FROM_MEMBER(listener_ctx, context, req->conn->ctx);
 
   SPIPlanPtr plan = lctx->plan;
@@ -612,12 +639,13 @@ static int handler(request_message_t *msg) {
   MemoryContext memory_context = CurrentMemoryContext;
   PG_TRY();
   {
-    char nulls[REQUEST_PLAN_PARAMS] = {[REQUEST_PLAN_METHOD] = ' ',
-                                       [REQUEST_PLAN_PATH] = ' ',
-                                       [REQUEST_PLAN_QUERY_STRING] =
-                                           req->query_at == SIZE_MAX ? 'n' : ' ',
-                                       [REQUEST_PLAN_BODY] = ' ',
-                                       [REQUEST_PLAN_HEADERS] = ' '};
+    char nulls[REQUEST_PLAN_PARAMS] = {
+        [REQUEST_PLAN_METHOD] = ' ',
+        [REQUEST_PLAN_PATH] = ' ',
+        [REQUEST_PLAN_QUERY_STRING] = req->query_at == SIZE_MAX ? 'n' : ' ',
+        [REQUEST_PLAN_BODY] = ' ',
+        [REQUEST_PLAN_HEADERS] = ' ',
+        [REQUEST_PLAN_WEBSOCKET_CLIENT_KEY] = msg->websocket_client_key != NULL ? ' ' : 'n'};
     ret = SPI_execute_plan(
         plan,
         (Datum[REQUEST_PLAN_PARAMS]){
@@ -630,7 +658,7 @@ static int handler(request_message_t *msg) {
                     ? PointerGetDatum(NULL)
                     : PointerGetDatum(cstring_to_text_with_len(req->path.base + req->query_at + 1,
                                                                req->path.len - req->query_at - 1)),
-            [REQUEST_PLAN_BODY] = ({
+            [REQUEST_PLAN_BODY] = msg->websocket_client_key != NULL ? PointerGetDatum(NULL) : ({
               while (req->proceed_req != NULL) {
                 req->proceed_req(req, NULL);
               }
@@ -663,7 +691,10 @@ static int handler(request_message_t *msg) {
                   construct_md_array(elems, header_nulls, 1, (int[1]){req->headers.size},
                                      (int[1]){1}, http_header_oid(), -1, false, TYPALIGN_DOUBLE);
               PointerGetDatum(result);
-            })},
+            }),
+            [REQUEST_PLAN_WEBSOCKET_CLIENT_KEY] = PointerGetDatum(
+                msg->websocket_client_key != NULL ? cstring_to_text(msg->websocket_client_key)
+                                                  : NULL)},
         nulls, false, 1);
   }
   PG_CATCH();
@@ -698,6 +729,7 @@ static int handler(request_message_t *msg) {
 
     bool isnull = false;
     Datum outcome = SPI_getbinval(tuple, tupdesc, c, &isnull);
+
     if (!isnull) {
       // We know that the outcome is a variable-length type
       struct varlena *outcome_value = (struct varlena *)PG_DETOAST_DATUM_PACKED(outcome);
@@ -815,6 +847,66 @@ static int handler(request_message_t *msg) {
         h2o_queue_proxy(msg, url_cstring, preserve_host);
       proxy_done:
         break;
+      }
+      case HTTP_OUTCOME_UPGRADE_TO_WEBSOCKET: {
+        HeapTupleHeader upgrade_to_websocket_tuple = (HeapTupleHeader)&variant->data;
+
+        text *topic = DatumGetTextPP(GetAttributeByIndex(
+            upgrade_to_websocket_tuple, HTTP_UPGRADE_TO_WEBSOCKET_TUPLE_TOPIC, &isnull));
+        size_t topic_len = VARSIZE_ANY_EXHDR(topic);
+        char *topic_cstring = h2o_mem_alloc_pool(&req->pool, char *, topic_len + 1);
+
+        char *on_message = text_to_cstring(DatumGetTextPP(GetAttributeByIndex(
+            upgrade_to_websocket_tuple, HTTP_UPGRADE_TO_WEBSOCKET_TUPLE_ON_MESSAGE, &isnull)));
+
+        MemoryContext memory_context = CurrentMemoryContext;
+        char *websocket_message_cte = psprintf(
+            // clang-format off
+              "select " "$" WEBSOCKET_PLAN_PARAM(WEBSOCKET_PLAN_BODY) " AS body"
+            // clang-format on
+        );
+
+        List *query_stmt = omni_sql_parse_statement(on_message);
+        if (omni_sql_is_parameterized(query_stmt)) {
+          ereport(WARNING,
+                  errmsg("WebSocket query is parameterized and is rejected:\n %s", on_message));
+        } else {
+          List *websocket_message_cte_stmt = omni_sql_parse_statement(websocket_message_cte);
+          query_stmt =
+              omni_sql_add_cte(query_stmt, "message", websocket_message_cte_stmt, false, true);
+
+          char *query = omni_sql_deparse_statement(query_stmt);
+          list_free_deep(websocket_message_cte_stmt);
+          list_free_deep(query_stmt);
+          PG_TRY();
+          {
+            SPIPlanPtr plan =
+                SPI_prepare(query, WEBSOCKET_PLAN_PARAMS,
+                            (Oid[WEBSOCKET_PLAN_PARAMS]){[WEBSOCKET_PLAN_BODY] = BYTEAOID});
+
+            // We have to keep the plan
+            int keepret = SPI_keepplan(plan);
+            if (keepret != 0) {
+              ereport(WARNING, errmsg("Can't save plan: %s", SPI_result_code_string(keepret)));
+            } else {
+              msg->websocket_on_message_plan = plan;
+            }
+          }
+          PG_CATCH();
+          {
+            MemoryContextSwitchTo(memory_context);
+            WITH_TEMP_MEMCXT {
+              ErrorData *error = CopyErrorData();
+              ereport(WARNING, errmsg("Error preparing query %s", query),
+                      errdetail("%s: %s", error->message, error->detail));
+            }
+
+            FlushErrorState();
+          }
+          PG_END_TRY();
+        }
+
+        h2o_queue_upgrade_to_websocket(msg, topic_cstring);
       }
       }
     } else {

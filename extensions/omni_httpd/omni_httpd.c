@@ -305,8 +305,9 @@ Datum handlers_query_validity_trigger(PG_FUNCTION_ARGS) {
       ereport(ERROR, errmsg("query can only contain one statement"));
     }
     List *request_cte = omni_sql_parse_statement(
-        "SELECT NULL::omni_http.http_method AS method, NULL::text AS path, NULL::text AS "
-        "query_string, NULL::bytea AS body, NULL::omni_http.http_header[] AS headers");
+        "select null::omni_http.http_method as method, null::text as path, null::text as "
+        "query_string, null::bytea as body, null::omni_http.http_header[] as headers, null::text "
+        "as websocket_client_key");
     omni_sql_add_cte(stmts, "request", request_cte, false, true);
     char *err;
     if (!omni_sql_is_valid(stmts, &err)) {

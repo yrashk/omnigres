@@ -4,6 +4,15 @@
 #include <pthread.h>
 #include <stdbool.h>
 
+#include <h2o/websocket.h>
+
+// This hides the type for the event loop but can be unmasked by others by doing this:
+//   #define VoidPtr(x) x
+// prior to inclusion of event_loop.h
+#ifndef VoidPtr
+#define VoidPtr(x) void *
+#endif
+
 /**
  * This event loop handles incoming connections
  */
@@ -63,6 +72,12 @@ typedef struct {
   h2o_req_t *req;
   pthread_mutex_t mutex;
   h2o_socket_t *server_socket; /*< server socket */
+  const char *websocket_client_key;
+  h2o_websocket_conn_t *websocket_conn;
+  // websocket_on_message_plan is typed obscurely because we don't want the event loop
+  // to do anything with it. But it's SPIPlanPtr
+  VoidPtr(SPIPlanPtr) websocket_on_message_plan;
+  const struct wslay_event_on_msg_recv_arg *websocket_message;
 } request_message_t;
 
 /**
@@ -114,12 +129,26 @@ void h2o_queue_send_inline(request_message_t *msg, const char *body, size_t len)
 void h2o_queue_abort(request_message_t *msg);
 
 /**
- * Request aborting the connection
+ * Request proxying
  * @param msg request message
  * @param url target URL
  * @param preserve_host whether Host header should be preserved
  */
 void h2o_queue_proxy(request_message_t *msg, char *url, bool preserve_host);
+
+/**
+ * Request upgrade to WebSocket
+ * @param msg request message
+ * @param topic connection topic
+ */
+void h2o_queue_upgrade_to_websocket(request_message_t *msg, char *topic);
+
+/**
+ * Send a WebSocket message
+ * @param msg request message
+ * @param WebSocket message
+ */
+void h2o_send_to_websocket(request_message_t *msg, struct wslay_event_msg *wsmsg);
 
 /**
  * Registers event loop receiver. Must be done prior to starting

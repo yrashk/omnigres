@@ -39,6 +39,9 @@ static const char *OMNI_HTTPD_CONFIGURATION_RELOAD_SEMAPHORE =
 #define HTTP_PROXY_TUPLE_URL 0
 #define HTTP_PROXY_TUPLE_PRESERVE_HOST 1
 
+#define HTTP_UPGRADE_TO_WEBSOCKET_TUPLE_TOPIC 0
+#define HTTP_UPGRADE_TO_WEBSOCKET_TUPLE_ON_MESSAGE 1
+
 /**
  * Indicates whether this process is `master_worker`
  */

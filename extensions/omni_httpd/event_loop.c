@@ -2,6 +2,7 @@
 #include <stdatomic.h>
 
 #include <h2o.h>
+#include <h2o/websocket.h>
 
 #include "event_loop.h"
 
@@ -24,7 +25,12 @@ h2o_multithread_queue_t *event_loop_queue;
 
 static size_t requests_in_flight = 0;
 
-typedef enum { MSG_KIND_SEND, MSG_KIND_ABORT, MSG_KIND_PROXY } send_message_kind;
+typedef enum {
+  MSG_KIND_SEND,
+  MSG_KIND_ABORT,
+  MSG_KIND_PROXY,
+  MSG_KIND_UPGRADE_TO_WEBSOCKET
+} send_message_kind;
 
 typedef struct {
   h2o_multithread_message_t super;
@@ -40,6 +46,9 @@ typedef struct {
       char *url;
       bool preserve_host;
     } proxy;
+    struct {
+      char *topic;
+    } upgrade_to_websocket;
   } payload;
 } send_message_t;
 
@@ -126,6 +135,23 @@ void h2o_queue_proxy(request_message_t *msg, char *url, bool preserve_host) {
   h2o_multithread_send_message(&event_loop_receiver, &message->super);
 }
 
+void h2o_queue_upgrade_to_websocket(request_message_t *msg, char *topic) {
+  h2o_req_t *req = msg->req;
+  if (req == NULL) {
+    // The connection is gone, bail
+    return;
+  }
+
+  send_message_t *message = malloc(sizeof(*message));
+  message->reqmsg = msg;
+  message->kind = MSG_KIND_UPGRADE_TO_WEBSOCKET;
+  message->payload.upgrade_to_websocket.topic = topic;
+
+  message->super = (h2o_multithread_message_t){{NULL}};
+
+  h2o_multithread_send_message(&event_loop_receiver, &message->super);
+}
+
 static inline void prepare_req_for_reprocess(h2o_req_t *req) {
   req->conn->ctx->proxy.client_ctx.tunnel_enabled = 1;
 
@@ -139,6 +165,23 @@ static inline void prepare_req_for_reprocess(h2o_req_t *req) {
   // as 0 >= 0:
   // https://github.com/h2o/h2o/issues/3225
   req->conn->ctx->proxy.client_ctx.max_buffer_size = H2O_SOCKET_INITIAL_INPUT_BUFFER_SIZE * 2;
+}
+
+static void on_ws_message(h2o_websocket_conn_t *conn,
+                          const struct wslay_event_on_msg_recv_arg *arg) {
+  request_message_t *m = (request_message_t *)conn->data;
+  pthread_mutex_unlock(&m->mutex);
+  if (arg == NULL) {
+    h2o_websocket_close(conn);
+    return;
+  }
+
+  if (!wslay_is_ctrl_frame(arg->opcode)) {
+    struct wslay_event_msg msgarg = {arg->opcode, arg->msg, arg->msg_length};
+    //    wslay_event_queue_msg(conn->ws_ctx, &msgarg);
+    m->websocket_message = arg;
+    h2o_multithread_send_message(&handler_receiver, &m->super);
+  }
 }
 
 static void on_message(h2o_multithread_receiver_t *receiver, h2o_linklist_t *messages) {
@@ -190,9 +233,15 @@ static void on_message(h2o_multithread_receiver_t *receiver, h2o_linklist_t *mes
                             0);
       break;
     }
+    case MSG_KIND_UPGRADE_TO_WEBSOCKET: {
+      reqmsg->websocket_conn =
+          h2o_upgrade_to_websocket(req, reqmsg->websocket_client_key, reqmsg, on_ws_message);
+      goto done_without_unlocking_mutex;
+    }
     }
   done:
     pthread_mutex_unlock(&reqmsg->mutex);
+  done_without_unlocking_mutex:
     h2o_linklist_unlink(&message->link);
     free(send_msg);
   }
@@ -296,11 +345,14 @@ int event_loop_req_handler(h2o_handler_t *self, h2o_req_t *req) {
   }
   requests_in_flight++;
   request_message_t *msg = malloc(sizeof(*msg));
+  msg->websocket_message = NULL;
   msg->super = (h2o_multithread_message_t){{NULL}};
   msg->req = req;
   if (req != NULL) {
     msg->server_socket = get_server_socket_from_req(req);
   }
+  h2o_is_websocket_handshake(msg->req, &msg->websocket_client_key);
+
   pthread_mutex_init(&msg->mutex, NULL);
 
   // Track request deallocation
