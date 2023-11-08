@@ -82,6 +82,7 @@ instance:
      listener,
      handler
   - call omni_httpd.wait_for_configuration_reloads(1)
+  - grant all on table users to omni_httpd_handler
 
 tests:
 - name: query dump

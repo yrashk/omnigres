@@ -91,18 +91,6 @@ static void sigterm() {
   h2o_multithread_send_message(&handler_receiver, NULL);
 }
 
-/**
- * HTTP worker starts with this user, and it's retrieved after initializing
- * the database.
- */
-static Oid TopUser = InvalidOid;
-/**
- * This is the current user used by the handler.
- *
- * Resets every time HTTP worker reloads configuration to allow for superuser
- * privileges during the reload.
- */
-static Oid CurrentHandlerUser = InvalidOid;
 
 /**
  * HTTP worker entry point
@@ -133,7 +121,6 @@ void http_worker(Datum db_oid) {
 
   // Connect worker to the database
   BackgroundWorkerInitializeConnectionByOid(db_oid, InvalidOid, 0);
-  TopUser = GetAuthenticatedUserId();
 
   listener_contexts = clist_listener_contexts_init();
 
@@ -145,32 +132,13 @@ void http_worker(Datum db_oid) {
     bool worker_reload_test = true;
     if (atomic_compare_exchange_strong(&worker_reload, &worker_reload_test, false)) {
 
-      // Reset to TopUser
-      SetUserIdAndSecContext(TopUser, 0);
-      CurrentHandlerUser = TopUser;
-
       SetCurrentStatementStartTimestamp();
       StartTransactionCommand();
       PushActiveSnapshot(GetTransactionSnapshot());
 
       SPI_connect();
 
-      // The idea here is that we get handlers sorted by listener id the same way they were
-      // sorted in the master worker (`by id asc`) and since they will arrive in the same order
-      // in the list of fds, we can simply get them by the index.
-      //
-      // This table is locked by the master worker and thus the order of listeners will not change
-
-      int handlers_query_rc = SPI_execute(
-          "select listeners.id, handlers.query, handlers.role_name "
-          "from omni_httpd.listeners "
-          "left join omni_httpd.listeners_handlers on listeners.id = "
-          "listeners_handlers.listener_id "
-          "left join omni_httpd.handlers handlers on handlers.id = listeners_handlers.handler_id "
-          "order by listeners.id asc",
-          false, 0);
-
-      // Now that we have this information, we can let the master worker commit its update and
+      // We can let the master worker commit its update and
       // release the lock on the table.
 
       pg_atomic_add_fetch_u32(semaphore, 1);
@@ -257,133 +225,52 @@ void http_worker(Datum db_oid) {
       }
       cvec_fd_fd_drop(&new_fds);
 
-      // Now we're ready to work with the results of the query we made earlier:
-      if (handlers_query_rc == SPI_OK_SELECT) {
+      PG_TRY();
+      {
+        // FIXME: add listener (currently set to null)
+        SPIPlanPtr plan =
+            // clang-format off
+            SPI_prepare("select omni_httpd.handler(null, omni_httpd.http_request(method => $"
+        REQUEST_PLAN_PARAM(REQUEST_PLAN_METHOD) "::omni_http.http_method, " "path => $"
+        REQUEST_PLAN_PARAM(REQUEST_PLAN_PATH) ", query_string => $"
+        REQUEST_PLAN_PARAM(REQUEST_PLAN_QUERY_STRING)
+                        ", body => $" REQUEST_PLAN_PARAM(REQUEST_PLAN_BODY) ", headers => $"
+        REQUEST_PLAN_PARAM(REQUEST_PLAN_HEADERS)  "))", REQUEST_PLAN_PARAMS,
+                        (Oid[REQUEST_PLAN_PARAMS]){
+                            [REQUEST_PLAN_METHOD] = TEXTOID,
+                            [REQUEST_PLAN_PATH] = TEXTOID,
+                            [REQUEST_PLAN_QUERY_STRING] = TEXTOID,
+                            [REQUEST_PLAN_BODY] = BYTEAOID,
+                            [REQUEST_PLAN_HEADERS] = http_header_array_oid(),
+                        });
+        // clang-format on
 
-        // Here we have to track what was the last listener id
-        int last_id = 0;
-        // Here we have to track what was the last index
-        int index = -1;
+        Assert(plan != NULL);
 
-        TupleDesc tupdesc = SPI_tuptable->tupdesc;
-        SPITupleTable *tuptable = SPI_tuptable;
-        for (int i = 0; i < tuptable->numvals; i++) {
-          HeapTuple tuple = tuptable->vals[i];
-          bool id_is_null = false;
-          Datum id = SPI_getbinval(tuple, tupdesc, 1, &id_is_null);
+        // We have to keep the plan as we're going to disconnect from SPI
+        int keepret = SPI_keepplan(plan);
 
-          bool query_is_null = false;
-          Datum query = SPI_getbinval(tuple, tupdesc, 2, &query_is_null);
-
-          // Figure out socket index
-          if (last_id != DatumGetInt32(id)) {
-            last_id = DatumGetInt32(id);
-            index++;
-          }
-
-          // If no handler has matched, continue to the next row
-          if (query_is_null) {
-            continue;
-          }
-
-          Oid role_id = InvalidOid;
-          bool role_superuser = false;
-          {
-            bool role_name_is_null = false;
-            Datum role_name = SPI_getbinval(tuple, tupdesc, 3, &role_name_is_null);
-
-            HeapTuple roleTup = SearchSysCache1(AUTHNAME, role_name);
-            if (!HeapTupleIsValid(roleTup)) {
-              ereport(WARNING,
-                      errmsg("role \"%s\" does not exist", NameStr(*DatumGetName(role_name))));
-            } else {
-              Form_pg_authid rform = (Form_pg_authid)GETSTRUCT(roleTup);
-              role_id = rform->oid;
-              role_superuser = rform->rolsuper;
-            }
-            ReleaseSysCache(roleTup);
-          }
-
-          const cvec_fd_fd_value *fd = cvec_fd_fd_at(&fds, index);
-          Assert(fd != NULL);
-          listener_ctx *listener_ctx = NULL;
-          c_foreach(iter, clist_listener_contexts, listener_contexts) {
-            if (iter.ref->master_fd == fd->master_fd) {
-              listener_ctx = iter.ref;
-              break;
-            }
-          }
-          Assert(listener_ctx != NULL);
-
-          char *query_string = text_to_cstring(DatumGetTextPP(query));
-          MemoryContext memory_context = CurrentMemoryContext;
-          char *request_cte = psprintf(
-              // clang-format off
-              "select " "$" REQUEST_PLAN_PARAM(
-                      REQUEST_PLAN_METHOD) "::text::omni_http.http_method AS method, "
-              "$" REQUEST_PLAN_PARAM(REQUEST_PLAN_PATH) " as path, "
-              "$" REQUEST_PLAN_PARAM(REQUEST_PLAN_QUERY_STRING) " as query_string, "
-              "$" REQUEST_PLAN_PARAM(REQUEST_PLAN_BODY) " as body, "
-              "$" REQUEST_PLAN_PARAM(REQUEST_PLAN_HEADERS) " as headers "
-              // clang-format on
-          );
-
-          List *query_stmt = omni_sql_parse_statement(query_string);
-          if (omni_sql_is_parameterized(query_stmt)) {
-            ereport(WARNING,
-                    errmsg("Listener query is parameterized and is rejected:\n %s", query_string));
+        // FIXME: Currently, let's just do this for every listener context
+        c_foreach(iter, clist_listener_contexts, listener_contexts) {
+          if (keepret != 0) {
+            ereport(WARNING, errmsg("Can't save plan: %s", SPI_result_code_string(keepret)));
+            iter.ref->plan = NULL;
           } else {
-            List *request_cte_stmt = omni_sql_parse_statement(request_cte);
-            query_stmt = omni_sql_add_cte(query_stmt, "request", request_cte_stmt, false, true);
-
-            char *query = omni_sql_deparse_statement(query_stmt);
-            list_free_deep(request_cte_stmt);
-            list_free_deep(query_stmt);
-            PG_TRY();
-            {
-              SPIPlanPtr plan = SPI_prepare(query, REQUEST_PLAN_PARAMS,
-                                            (Oid[REQUEST_PLAN_PARAMS]){
-                                                [REQUEST_PLAN_METHOD] = TEXTOID,
-                                                [REQUEST_PLAN_PATH] = TEXTOID,
-                                                [REQUEST_PLAN_QUERY_STRING] = TEXTOID,
-                                                [REQUEST_PLAN_BODY] = BYTEAOID,
-                                                [REQUEST_PLAN_HEADERS] = http_header_array_oid(),
-                                            });
-
-              Assert(plan != NULL);
-              // Get role
-              listener_ctx->role_id = role_id;
-              listener_ctx->role_is_superuser = role_superuser;
-
-              // We have to keep the plan as we're going to disconnect from SPI
-              int keepret = SPI_keepplan(plan);
-              if (keepret != 0) {
-                ereport(WARNING, errmsg("Can't save plan: %s", SPI_result_code_string(keepret)));
-                listener_ctx->plan = NULL;
-              } else {
-                listener_ctx->plan = plan;
-              }
-            }
-            PG_CATCH();
-            {
-              MemoryContextSwitchTo(memory_context);
-              WITH_TEMP_MEMCXT {
-                ErrorData *error = CopyErrorData();
-                ereport(WARNING, errmsg("Error preparing query %s", query),
-                        errdetail("%s: %s", error->message, error->detail));
-              }
-
-              FlushErrorState();
-            }
-            PG_END_TRY();
-            pfree(query);
+            iter.ref->plan = plan;
           }
-          pfree(query_string);
         }
-      } else {
-        ereport(WARNING, errmsg("Error fetching configuration: %s",
-                                SPI_result_code_string(handlers_query_rc)));
       }
+      PG_CATCH();
+      {
+        WITH_TEMP_MEMCXT {
+          ErrorData *error = CopyErrorData();
+          ereport(WARNING, errmsg("Error preparing handler"),
+                  errdetail("%s: %s", error->message, error->detail));
+        }
+
+        FlushErrorState();
+      }
+      PG_END_TRY();
 
       SPI_finish();
       PopActiveSnapshot();
@@ -603,14 +490,6 @@ static int handler(request_message_t *msg) {
   bool succeeded = false;
 
   int ret;
-
-  // If the current handler user is not the requested one,
-  // set it to the requested one.
-  if (CurrentHandlerUser != lctx->role_id) {
-    CurrentHandlerUser = lctx->role_id;
-    SetUserIdAndSecContext(CurrentHandlerUser,
-                           lctx->role_is_superuser ? 0 : SECURITY_LOCAL_USERID_CHANGE);
-  }
 
   // Execute listener's query
   MemoryContext memory_context = CurrentMemoryContext;
