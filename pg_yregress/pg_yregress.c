@@ -55,6 +55,21 @@ static bool populate_ytest_from_fy_node(struct fy_document *fyd, struct fy_node 
     }
 
     {
+      // Is the test meant to be ran on a different database?
+      struct fy_node *database = fy_node_mapping_lookup_by_string(test, STRLIT("database"));
+      y_test->database.base = NULL;
+
+      if (database != NULL) {
+        if (!fy_node_is_scalar(database)) {
+          fprintf(stderr, "database should be a string, got: %s",
+                  fy_emit_node_to_string(database, FYECF_DEFAULT));
+          return false;
+        }
+        y_test->database.base = fy_node_get_scalar(database, &y_test->database.len);
+      }
+    }
+
+    {
       // Is the test meant to be negative? As in "if test succeeds, it's a failure"
       struct fy_node *negative = fy_node_mapping_lookup_by_string(test, STRLIT("negative"));
 

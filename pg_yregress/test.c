@@ -94,6 +94,9 @@ proceed:
 
   assert(test->instance != NULL);
   PGconn *conn;
+  if (test->database.base != 0) {
+  }
+
   if (default_conn == NULL) {
     struct fy_node *test_container = fy_node_get_parent(test->node);
     assert(fy_node_is_sequence(test_container));

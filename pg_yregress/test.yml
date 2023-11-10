@@ -5,6 +5,8 @@ name: pg_yregress
 instances:
   main:
     default: true
+    init:
+    - create database another_db
   restarted:
     init:
     # This will be tested
@@ -411,3 +413,10 @@ tests:
     auth_method: trust
     options: null
     error: null
+
+- name: another database
+  database: another_database
+  query: |
+    select *
+    from
+        pg_class
