@@ -501,9 +501,7 @@ tests:
     - typname: sum_type
       variants: '{boolean,bigint}'  
 
-  - query: select omni_types.add_variant('sum_type', 'integer')
-    results:
-    - add_variant: 
+  - select omni_types.add_variant('sum_type', 'integer')
 
   - query: *dump_types
     results:
@@ -539,9 +537,7 @@ tests:
     - typname: sum_type
       variants: '{boolean,text}'
 
-  - query: select omni_types.add_variant('sum_type', 'bigint')
-    results:
-    - add_variant:  
+  - select omni_types.add_variant('sum_type', 'bigint')
 
   - query: *dump_types
     results:

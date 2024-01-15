@@ -16,8 +16,19 @@ CPMAddPackage(GITHUB_REPOSITORY "yrashk/libfyaml" GIT_TAG "4f1a4b1" VERSION "v0.
 
 include(CTest)
 
+include(SWIprolog)
+include(Logtalk)
+
+find_swipl(SWIPL)
+find_logtalk(Logtalk ${SWIPL_VERSION})
+
 add_executable(pg_yregress pg_yregress.c instance.c test.c sighandler.c str.c yaml.c)
 target_link_libraries(pg_yregress PRIVATE fyaml pq)
+target_link_swipl(pg_yregress SWIPL)
+
+logtalk_qlf(Logtalk pg_yregress
+        SOURCES lgt/pg_yregress.lgt lgt/test.lgt
+        LOADER lgt/loader.lgt)
 
 # Enable GNU extensions for `asprintf`, `nftw`, etc.
 if(NOT APPLE)

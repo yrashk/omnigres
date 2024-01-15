@@ -202,7 +202,7 @@ tests:
       path: /test
       qs: q=1
       headers:
-      - x-test:
+      - x-test: ""
       body: ""
 
 - name: sending body

@@ -13,7 +13,7 @@ tests:
     select ''::omni_types.unit
     unit
   results:
-  - unit:
+  - unit: ''
 
 - name: binary send/recv
   query: |

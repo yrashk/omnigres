@@ -16,7 +16,7 @@ tests:
 - query: select omni_web.url_encode(unnest) from unnest(string_to_array('http://hu.wikipedia.org/wiki/São_Paulo','/'))
   results:
     - url_encode: http%3A
-    - url_encode:
+    - url_encode: ""
     - url_encode: hu.wikipedia.org
     - url_encode: wiki
     - url_encode: S%C3%A3o_Paulo

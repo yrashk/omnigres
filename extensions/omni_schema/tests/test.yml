@@ -14,13 +14,13 @@ tests:
     order by relname
   results:
   - relname: auxiliary_tools
-    extcondition:
+    extcondition: ""
   - relname: languages
-    extcondition:
+    extcondition: ""
   - relname: migrations
-    extcondition:
+    extcondition: ""
   - relname: migrations_id_seq
-    extcondition:
+    extcondition: ""
 
 - name: function
   steps:

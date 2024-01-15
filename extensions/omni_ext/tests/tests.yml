@@ -14,7 +14,7 @@ tests:
     steps:
       - query: select omni_ext.load('omni_ext_test', 'unknown')
         results:
-          - load:
+        - load: ""
       - query: select omni_ext.load('omni_ext_test', '0.1')
         results:
           - load: 0.1

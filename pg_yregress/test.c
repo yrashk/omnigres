@@ -366,6 +366,7 @@ proceed:
             Oid column_type = PQftype(result, column);
             char *str_value =
                 PQgetisnull(result, row, column) ? "null" : PQgetvalue(result, row, column);
+
             struct fy_node *value;
             // If results are returned as binary
             if (result_format == 1) {
@@ -573,7 +574,7 @@ report:
                                fy_node_copy(original_doc, test->node));
       }
 
-      char *yaml_report = fy_emit_node_to_string(report, FYECF_DEFAULT);
+      char *yaml_report = fy_emit_node_to_string(report, FYECF_MODE_ORIGINAL);
       FILE *yamlf = fmemopen((void *)yaml_report, strlen(yaml_report), "r");
 
       char *line = NULL;

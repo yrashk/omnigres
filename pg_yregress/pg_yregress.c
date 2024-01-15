@@ -2,6 +2,8 @@
 #include <pwd.h>
 #include <stdio.h>
 
+#include <SWI-Prolog.h>
+
 #include "pg_yregress.h"
 
 FILE *tap_file;
@@ -614,7 +616,57 @@ static void get_path_from_popen(char *cmd, char *path) {
 
 extern char **environ;
 
+#define PL_require(x)                                                                              \
+  if (!x)                                                                                          \
+  return FALSE
+
+term_t Logtalk(term_t receiver, char *predicate_name, int arity, term_t arg) {
+  // create term for the message
+  functor_t functor = PL_new_functor(PL_new_atom(predicate_name), arity);
+  term_t pred = PL_new_term_ref();
+  PL_require(PL_cons_functor_v(pred, functor, arg));
+
+  // term for ::(receiver, message)
+  functor_t send_functor = PL_new_functor(PL_new_atom("::"), 2);
+  term_t goal = PL_new_term_ref();
+  PL_require(PL_cons_functor(goal, send_functor, receiver, pred));
+
+  return goal;
+}
+
+term_t Logtalk_named(char *object_name, char *predicate_name, int arity, term_t arg) {
+  // create term for the receiver of the message
+  term_t receiver = PL_new_term_ref();
+  PL_put_atom_chars(receiver, object_name);
+
+  return Logtalk(receiver, predicate_name, arity, arg);
+}
+
+predicate_t call_predicate() {
+  static predicate_t pred = NULL;
+  if (pred == NULL) {
+    pred = PL_predicate("call", 1, NULL);
+  }
+  return pred;
+}
+
 int main(int argc, char **argv) {
+  {
+    // Prepare SWI-Prolog
+
+    char *program = argv[0];
+    char *plav[3];
+
+    // make the argument vector
+    plav[0] = program;
+    plav[1] = "--signals=false";
+    plav[2] = NULL;
+
+    // initialise SWI Prolog
+    if (!PL_initialise(2, plav)) {
+      PL_halt(1);
+    }
+  }
 
   static struct option options[] = {{"host", required_argument, 0, 'h'},
                                     {"username", required_argument, 0, 'U'},
@@ -708,7 +760,7 @@ int main(int argc, char **argv) {
 
     // Read the document without resolving aliases (yet)
     struct fy_parse_cfg parse_cfg = {
-        .flags = FYPCF_PARSE_COMMENTS | FYPCF_YPATH_ALIASES | FYPCF_COLLECT_DIAG,
+        .flags = FYPCF_YPATH_ALIASES | FYPCF_COLLECT_DIAG,
         .diag = fy_diag_create(&diag_cfg),
     };
 
@@ -736,7 +788,46 @@ int main(int argc, char **argv) {
     fy_document_resolve(fyd);
 
     if (fyd != NULL) {
-      int result = execute_document(fyd, managed, host, port, username, dbname, password);
+
+      // Process document
+
+      char *json = fy_emit_document_to_string(fyd, FYECF_MODE_JSON);
+      char *out;
+      term_t inout = PL_new_term_refs(3);
+      if (!PL_put_atom_chars(inout, argv[optind])) {
+        fprintf(stderr, "Unexpected Logtalk engine error");
+        return 1;
+      }
+      if (!PL_put_list_chars(inout + 1, json)) {
+        fprintf(stderr, "Unexpected Logtalk engine error");
+        return 1;
+      }
+      term_t run = Logtalk_named("pg_yregress", "file", 3, inout);
+      qid_t qid = PL_open_query(NULL, PL_Q_NORMAL, call_predicate(), run);
+      int result;
+      while (PL_next_solution(qid)) {
+        size_t sz;
+        if (!PL_get_list_nchars(inout + 2, &sz, &out, REP_UTF8)) {
+          fprintf(stderr, "Unexpected Logtalk engine error");
+          return 1;
+        }
+        struct fy_parse_cfg parse_cfg = {
+            .flags = FYPCF_JSON_FORCE,
+        };
+        printf("%s\n", out);
+        struct fy_document *processed_fyd = fy_document_build_from_string(&parse_cfg, out, sz);
+        result = execute_document(processed_fyd, managed, host, port, username, dbname, password);
+        instances_cleanup();
+        if (result != 0) {
+          break;
+        }
+        fy_document_destroy(processed_fyd);
+      }
+      PL_close_query(qid);
+      free(json);
+
+      PL_cleanup(PL_CLEANUP_NO_CANCEL);
+
       return result;
     }
   } else {

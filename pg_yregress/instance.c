@@ -339,6 +339,7 @@ void instances_cleanup() {
       }
     }
   }
+  instances = NULL;
 }
 
 void register_instances_cleanup() { atexit(instances_cleanup); }
