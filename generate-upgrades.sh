@@ -68,6 +68,9 @@ revision() {
           # First, for every migration not present in this revision, add it to the upgrade
           IFS=, read -r -a head_migrations <<< "${HEAD_MIGRATIONS[$ext]}"
           rm -f "$DEST_DIR/$ext--$rev--$HEAD_REV.sql"
+          if [ -f "$DEST_DIR/$HEAD_REV/extensions/$ext/pre_upgrade.sql" ]; then
+               $BUILD_DIR/misc/inja/inja "$DEST_DIR/$HEAD_REV/extensions/$ext/pre_upgrade.sql" "{\"version\": \"$HEAD_REV\", \"previous_version\": \"$HEAD_REV\"}" >> "$DEST_DIR/$ext--$rev--$HEAD_REV.sql"
+          fi
           for mig in ${head_migrations[@]}; do
             if [ ! -f "$DEST_DIR/$rev/extensions/$ext/migrate/$mig" ]; then
                $BUILD_DIR/misc/inja/inja "$DEST_DIR/$HEAD_REV/extensions/$ext/migrate/$mig" >> "$DEST_DIR/$ext--$rev--$HEAD_REV.sql"
@@ -105,7 +108,7 @@ EOF
           export PGSHAREDIR="$DEST_DIR/$HEAD_REV/build/pg-share"
           # We copy all scripts because there are dependencies
           cp "$DEST_DIR"/$HEAD_REV/build/packaged/extension/*.sql "$PGSHAREDIR/extension"
-          "$PG_BINDIR/pg_ctl" start -D "$db" -o "-c listen_addresses=''" -o "-k $sockdir" || exit 1
+          "$PG_BINDIR/pg_ctl" start -D "$db" -o "-c listen_addresses='' -c shared_preload_libraries='$DEST_DIR/$HEAD_REV/build/packaged/omni_ext.so'" -o "-k $sockdir" || exit 1
           # * install the extension from the head revision
           echo "create extension $ext version '$HEAD_REV' cascade;" | "$PG_BINDIR/psql" -h "$sockdir" -v ON_ERROR_STOP=1 $ext
           if [ "${PIPESTATUS[0]}" -ne 0 ]; then
@@ -123,6 +126,9 @@ EOF
 EOF
           if [ "${PIPESTATUS[1]}" -ne 0 ]; then
               exit 1
+          fi
+          if [ -f "$DEST_DIR/$HEAD_REV/extensions/$ext/post_upgrade.sql" ]; then
+             $BUILD_DIR/misc/inja/inja "$DEST_DIR/$HEAD_REV/extensions/$ext/post_upgrade.sql" "{\"version\": \"$HEAD_REV\", \"previous_version\": \"$HEAD_REV\"}" >> "$DEST_DIR/$ext--$rev--$HEAD_REV.sql"
           fi
           # test the upgrade
           cp "$DEST_DIR/$ext--$rev--$HEAD_REV.sql" "$DEST_DIR/$rev/build/pg-share/extension/$ext--$rev.control" "$DEST_DIR/$rev/build/pg-share/extension/$ext--$rev.sql" "$PGSHAREDIR/extension"

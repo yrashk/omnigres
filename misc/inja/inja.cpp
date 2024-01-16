@@ -5,10 +5,13 @@
 #include "inja.hpp"
 
 int main(int argc, char **argv) {
-    if (argc == 2) {
+    if (argc >= 2) {
         char *filename = argv[1];
         inja::Environment env;
         nlohmann::json data;
+        if (argc >= 3) {
+           data = nlohmann::json::parse(argv[2]);
+        }
         std::string_view s(filename);
         if (std::string(filename).ends_with(".sql")) {
             env.set_line_statement("--##");

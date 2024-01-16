@@ -1,0 +1,1 @@
+select omni_ext.load('omni_httpd', '/*{{ version }}*/');
