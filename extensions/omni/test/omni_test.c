@@ -5,6 +5,9 @@
 #include <postgres.h>
 #include <fmgr.h>
 // clang-format on
+#include <commands/dbcommands.h>
+#include <miscadmin.h>
+#include <utils/builtins.h>
 
 #include <omni.h>
 
@@ -23,13 +26,39 @@ void run_hook_fn(omni_hook_handle *handle, QueryDesc *queryDesc, ScanDirection d
   ereport(NOTICE, errmsg("run_hook"));
 }
 
+void _Omni_load(const omni_handle *handle) {
+}
+
+static char *shmem_test;
+
 void _Omni_init(const omni_handle *handle) {
   initialized = true;
 
   omni_hook run_hook = {
       .name = "run_hook", .type = omni_hook_executor_run, .fn = {.executor_run = run_hook_fn}};
   handle->register_hook(handle, &run_hook);
+
+  bool found;
+
+  shmem_test = (char *)handle->allocate_shmem(
+      handle, psprintf("test:%s", get_database_name(MyDatabaseId)), 128, &found);
+
+  if (!found) {
+    strcpy(shmem_test, "hello");
+  }
 }
 
 PG_FUNCTION_INFO_V1(hello);
 Datum hello(PG_FUNCTION_ARGS) { PG_RETURN_CSTRING(hello_message); }
+
+PG_FUNCTION_INFO_V1(get_shmem);
+Datum get_shmem(PG_FUNCTION_ARGS) { PG_RETURN_CSTRING(shmem_test); }
+
+PG_FUNCTION_INFO_V1(set_shmem);
+Datum set_shmem(PG_FUNCTION_ARGS) {
+  if (PG_ARGISNULL(0)) {
+    ereport(ERROR, errcode(ERRCODE_NULL_VALUE_NOT_ALLOWED), errmsg("should not be null"));
+  }
+  text_to_cstring_buffer(PG_GETARG_TEXT_PP(0), shmem_test, 127);
+  PG_RETURN_CSTRING(shmem_test);
+}
