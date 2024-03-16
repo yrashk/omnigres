@@ -27,6 +27,9 @@
 PG_MODULE_MAGIC;
 OMNI_MAGIC;
 
+OMNI_MODULE_INFO(.name = "omni", .version = EXT_VERSION,
+                 .identity = "470594c4-7b4c-404c-83fd-48b799f77d87");
+
 omni_shared_info *shared_info;
 
 MODULE_VARIABLE(dshash_table *omni_modules);
@@ -268,6 +271,32 @@ static omni_handle_private *load_module(const char *path) {
     if (magic_fn != NULL) {
       // Check if magic is correct
       omni_magic *magic = magic_fn();
+
+      omni_module_information *module_info = dlsym(dlhandle, "_omni_module_information");
+
+      {
+        // Special case for omni 0.1.0 (TODO: deprecate)
+        void *database_worker_fn = dlsym(dlhandle, "database_worker");
+        void *startup_worker_fn = dlsym(dlhandle, "startup_worker");
+        void *deinitialize_backend_fn = dlsym(dlhandle, "deinitialize_backend");
+        if (magic != NULL && module_info == NULL && database_worker_fn != NULL &&
+            startup_worker_fn != NULL && deinitialize_backend_fn != NULL) {
+          ereport(ERROR, errmsg("omni extension 0.1.0 is incompatible with a preloaded omni "
+                                "library of %s, please upgrade",
+                                _omni_module_information.version));
+        }
+      }
+
+      {
+        if (magic != NULL && module_info != NULL &&
+            strcmp(module_info->identity, _omni_module_information.identity) == 0 &&
+            strcmp(module_info->version, _omni_module_information.version) != 0) {
+          ereport(ERROR, errmsg("omni extension %s is incompatible with a preloaded omni "
+                                "library of %s",
+                                module_info->version, _omni_module_information.version));
+        }
+      }
+
       if (magic->size == sizeof(omni_magic) && magic->version == OMNI_INTERFACE_VERSION) {
         // We are going to record it if it wasn't yet
         LWLockAcquire(&(locks + OMNI_LOCK_MODULE)->lock, LW_EXCLUSIVE);
