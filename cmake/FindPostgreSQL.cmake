@@ -125,6 +125,9 @@ if(NOT DEFINED PG_CONFIG)
             set(OLD_LDFLAGS "$ENV{LDFLAGS}")
             set(ENV{CFLAGS} "${OLD_CFLAGS} -I ${OPENSSL_ROOT_DIR}/include")
             set(ENV{LDFLAGS} "${OLD_LDLAGS} -L ${OPENSSL_ROOT_DIR}/lib")
+            # This ensure whatever compiler we're using to compile Omnigres, we're going
+            # to sue the same for Postgres
+            set(ENV{CC} "${CMAKE_C_COMPILER}")
         endif()
 
         if(BUILD_TYPE STREQUAL "RelWithDebInfo")
@@ -138,6 +141,8 @@ if(NOT DEFINED PG_CONFIG)
             set(ENV{CFLAGS} "$ENV{CFLAGS} ${CMAKE_C_FLAGS_RELWITHDEBINFO}")
         elseif(BUILD_TYPE STREQUAL "Release")
             set(ENV{CFLAGS} "$ENV{CFLAGS} ${CMAKE_C_FLAGS_RELEASE}")
+        elseif(BUILD_TYPE STREQUAL "Debug")
+            set(ENV{CFLAGS} "$ENV{CFLAGS} ${CMAKE_C_FLAGS_DEBUG} -fsanitize=address")
         endif()
 
         execute_process(
