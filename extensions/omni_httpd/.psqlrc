@@ -1,0 +1,73 @@
+create extension omni_sql;
+create extension omni_httpd cascade;
+
+create table connections
+(
+    id   uuid,
+    path text
+);
+
+create or replace function omni_httpd.websocket_handler(int, uuid, omni_httpd.http_request) returns bool
+    language plpgsql as
+$$
+begin
+    insert into connections (id, path) values ($2, $3.path);
+    return true;
+end;
+$$;
+
+create or replace function omni_httpd.websocket_on_open(uuid) returns void
+    language plpgsql as
+$$
+declare
+    _path text;
+begin
+    select connections.path into _path from connections where id = $1;
+    perform omni_httpd.websocket_send($1, '-- Welcome to the chat room ' || _path);
+    perform omni_httpd.websocket_send($1, messages.message)
+    from messages
+    where messages.path = _path;
+    perform omni_httpd.websocket_send($1, '-- enter your messages here');
+end;
+$$;
+
+create or replace function omni_httpd.websocket_on_close(uuid) returns void
+    language plpgsql as
+$$
+begin
+    delete from connections where id = $1;
+end;
+$$;
+
+create table messages
+(
+    conn_id uuid,
+    path text,
+    message text
+);
+
+create or replace function omni_httpd.websocket_on_message(uuid, text) returns void
+    language plpgsql as
+$$
+begin
+    insert into messages (conn_id, message, path) select $1, $2, path from connections where connections.id = $1;
+end;
+$$;
+
+create or replace function broadcast() returns trigger
+    language plpgsql as
+$$
+begin
+    perform omni_httpd.websocket_send(connections.id, new.message)
+    from connections
+    where connections.id != new.conn_id
+      and connections.path = new.path;
+    return new;
+end;
+$$;
+
+create trigger message_broadcast
+    after insert
+    on messages
+    for each row
+execute function broadcast();
