@@ -23,6 +23,11 @@ declare
     _path text;
 begin
     select connections.path into _path from connections where id = $1;
+    if not found then
+        raise log 'Hello outbound %', $1;
+        -- This is an outbound connection
+        return;
+    end if;
     perform omni_httpd.websocket_send($1, '-- Welcome to the chat room ' || _path);
     perform omni_httpd.websocket_send($1, messages.message)
     from messages
@@ -51,6 +56,9 @@ create or replace function omni_httpd.websocket_on_message(uuid, text) returns v
 $$
 begin
     insert into messages (conn_id, message, path) select $1, $2, path from connections where connections.id = $1;
+    if not found then
+        raise log 'received message % from %', $2, $1;
+    end if;
 end;
 $$;
 

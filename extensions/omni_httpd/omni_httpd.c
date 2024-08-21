@@ -29,6 +29,7 @@
 #endif
 #include <commands/async.h>
 #include <storage/latch.h>
+#include <storage/proc.h>
 #include <tcop/utility.h>
 #include <utils/builtins.h>
 #include <utils/guc_tables.h>
@@ -170,6 +171,7 @@ void _Omni_init(const omni_handle *handle) {
 #ifdef _SC_NPROCESSORS_ONLN
   default_num_http_workers = sysconf(_SC_NPROCESSORS_ONLN);
 #endif
+  default_num_http_workers = 1;
   // considering the omni_httpd master worker and the "omni startup" worker used by omni TODO:
   // revisit once omni_workers is set.
   int threshold = max_worker_processes - 2;
@@ -507,3 +509,63 @@ Datum websocket_send_text(PG_FUNCTION_ARGS) { return websocket_send(fcinfo, 0); 
 
 PG_FUNCTION_INFO_V1(websocket_send_bytea);
 Datum websocket_send_bytea(PG_FUNCTION_ARGS) { return websocket_send(fcinfo, 1); }
+
+PG_FUNCTION_INFO_V1(websocket_connect);
+
+Datum websocket_connect(PG_FUNCTION_ARGS) {
+  if (PG_ARGISNULL(0)) {
+    ereport(ERROR, errmsg("uuid can't be null"));
+  }
+  if (PG_ARGISNULL(1)) {
+    ereport(ERROR, errmsg("URL can't be null"));
+  }
+  pg_uuid_t *uuid = PG_GETARG_UUID_P(0);
+  text *url = PG_GETARG_TEXT_PP(1);
+
+  if (VARSIZE_ANY_EXHDR(url) >=
+      sizeof(((event_loop_message_t *)NULL)->payload.websocket_connect.url)) {
+    ereport(ERROR,
+            errmsg("URL must not be larger than %lu characters",
+                   sizeof(((event_loop_message_t *)NULL)->payload.websocket_connect.url) - 1));
+  }
+
+  LWLockAcquire(ProcArrayLock, LW_SHARED);
+  pid_t *omni_httpd_backends = (pid_t *)alloca(sizeof(pid_t) * MaxBackends);
+  int omni_httpd_backends_count = 0;
+  for (int i = 0; i < ProcGlobal->allProcCount; i++) {
+    struct stat st;
+    char socket_path[MAXPGPATH];
+    int pid = ProcGlobal->allProcs[i].pid;
+    snprintf(socket_path, sizeof(socket_path), "%s/omni_httpd.%d.sock", *temp_dir, pid);
+    if (stat(socket_path, &st) == 0) {
+      omni_httpd_backends[omni_httpd_backends_count] = (pid_t)pid;
+      omni_httpd_backends_count++;
+    }
+  }
+  LWLockRelease(ProcArrayLock);
+
+  int random_backend = rand() % omni_httpd_backends_count;
+  pid_t chosen_backend = omni_httpd_backends[random_backend];
+
+  ereport(NOTICE, errmsg("choosing %d (of %d) -> %d", random_backend, omni_httpd_backends_count,
+                         chosen_backend));
+
+  struct sockaddr_un sockaddr;
+  int client_fd = event_loop_unix_domain_socket(&sockaddr, chosen_backend);
+
+  event_loop_message_t msg = {
+      .type = event_loop_message_websocket_connect,
+  };
+  memcpy(msg.payload.websocket_connect.uuid, uuid->data,
+         sizeof(msg.payload.websocket_connect.uuid));
+  memcpy(msg.payload.websocket_connect.url, VARDATA_ANY(url), VARSIZE_ANY_EXHDR(url));
+  if (sendto(client_fd, &msg, sizeof(msg), 0, (struct sockaddr *)&sockaddr,
+             sizeof(struct sockaddr_un)) == -1) {
+    char *e = strerror(errno);
+    ereport(NOTICE, errmsg("err: %s %s", e, sockaddr.sun_path));
+  }
+
+  close(client_fd);
+
+  PG_RETURN_VOID();
+}

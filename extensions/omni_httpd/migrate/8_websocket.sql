@@ -83,3 +83,7 @@ create function websocket_send(uuid, bytea) returns void
     language c as
 'MODULE_PATHNAME',
 'websocket_send_bytea';
+
+create function websocket_connect(uuid, text) returns void
+    language c as
+'MODULE_PATHNAME';

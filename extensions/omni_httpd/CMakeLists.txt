@@ -25,7 +25,7 @@ add_postgresql_extension(
         omni_httpd
         SCHEMA omni_httpd
         RELOCATABLE false
-        SOURCES omni_httpd.c master_worker.c http_worker.c event_loop.c fd.c cascading_query.c
+        SOURCES omni_httpd.c master_worker.c http_worker.c event_loop.c fd.c cascading_query.c websocketclient.c
         DEPENDS_ON omni_sql omni libomni libpgaug libgluepg_stc
         REQUIRES omni_types omni_http
         TESTS_REQUIRE omni_httpc omni_vfs omni_mimetypes)

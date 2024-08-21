@@ -6,9 +6,14 @@
 
 #include "event_loop.h"
 
+#include "websocketclient.h"
+
 #ifdef POSTGRES_H
 #error "event_loop.c can't use any Postgres API"
 #endif
+
+static h2o_multithread_receiver_t getaddr_receiver;
+static h2o_multithread_queue_t *getaddr_queue;
 
 h2o_evloop_t *worker_event_loop;
 
@@ -209,6 +214,47 @@ static void on_ws_message(h2o_websocket_conn_t *conn,
   }
 }
 
+static void on_ws_client_message(h2o_websocket_client_conn_t *conn,
+                                 const struct wslay_event_on_msg_recv_arg *arg) {
+  char *uuid = (char *)conn->data;
+  if (conn->data != NULL && (arg == NULL || arg->opcode == WSLAY_CONNECTION_CLOSE)) {
+    handler_message_t *msg = malloc(sizeof(*msg));
+    msg->super = (h2o_multithread_message_t){{NULL}};
+    msg->type = handler_message_websocket_close;
+    memcpy(msg->payload.websocket_close.uuid, uuid, sizeof(msg->payload.websocket_close.uuid));
+
+    h2o_multithread_send_message(&handler_receiver, &msg->super);
+
+    // Remove the socket
+    struct sockaddr_un server;
+    websocket_unix_domain_socket(conn->data, &server, true);
+    // Mark this connection as closed and dispose the UUID
+    if (arg == NULL) {
+      h2o_websocket_client_close(conn);
+    }
+    free(conn->data);
+    conn->data = NULL;
+    return;
+  }
+
+  if (arg != NULL && !wslay_is_ctrl_frame(arg->opcode)) {
+    handler_message_t *msg = malloc(sizeof(*msg));
+    msg->super = (h2o_multithread_message_t){{NULL}};
+    msg->type = handler_message_websocket_message;
+    msg->payload.websocket_message.opcode = arg->opcode;
+    msg->payload.websocket_message.message = (uint8_t *)malloc(arg->msg_length);
+    msg->payload.websocket_message.message_len = arg->msg_length;
+    memcpy(msg->payload.websocket_message.message, arg->msg, arg->msg_length);
+    memcpy(msg->payload.websocket_message.uuid, uuid, sizeof(msg->payload.websocket_open.uuid));
+    if (arg->msg) {
+      printf("client message %.*s\n", arg->msg_length, arg->msg);
+    }
+
+    h2o_multithread_send_message(&handler_receiver, &msg->super);
+    h2o_websocket_client_proceed(conn);
+  }
+}
+
 // Taken from h2o:
 // https://github.com/h2o/h2o/blob/c54c63285b52421da2782f028022647fc2ea3dd1/lib/common/rand.c#L46-L86
 // We are depending on it anyway, but this function is declared static there.
@@ -266,6 +312,23 @@ int websocket_unix_domain_socket(websocket_uuid_t *uuid, struct sockaddr_un *ser
   format_uuid_rfc4122(server_addr->sun_path + len, *uuid, 4);
 
   if (producer) {
+    unlink(server_addr->sun_path);
+  }
+
+  return fd;
+}
+
+int event_loop_unix_domain_socket(struct sockaddr_un *server_addr, pid_t pid) {
+  extern char **temp_dir; // from omni_httpd
+  int fd = socket(AF_UNIX, SOCK_DGRAM, 0);
+
+  memset(server_addr, 0, sizeof(struct sockaddr_un));
+  server_addr->sun_family = AF_UNIX;
+
+  snprintf(server_addr->sun_path, sizeof(server_addr->sun_path), "%s/omni_httpd.%d.sock",
+           temp_dir ? *temp_dir : "/tmp", pid);
+
+  if (pid == getpid()) {
     unlink(server_addr->sun_path);
   }
 
@@ -332,7 +395,7 @@ static void on_message(h2o_multithread_receiver_t *receiver, h2o_linklist_t *mes
 
       // Create a Unix domain socket
       struct sockaddr_un server_addr;
-      int server_fd = websocket_unix_domain_socket(&reqmsg->ws_uuid, &server_addr, true);
+      int server_fd = websocket_unix_domain_socket(&reqmsg->ws_uuid, &server_addr, getpid());
       bind(server_fd, (struct sockaddr *)&server_addr, sizeof(struct sockaddr_un));
       listen(server_fd, SOMAXCONN);
 
@@ -364,6 +427,124 @@ void event_loop_register_receiver() {
   h2o_multithread_register_receiver(event_loop_queue, &event_loop_receiver, on_message);
 }
 
+int dgram_socket;
+static h2o_httpclient_connection_pool_t connpool;
+static h2o_socketpool_t sockpool;
+h2o_httpclient_ctx_t http_client_ctx = {
+    .connect_timeout = H2O_DEFAULT_HTTP1_REQ_IO_TIMEOUT,
+    .first_byte_timeout = H2O_DEFAULT_HANDSHAKE_TIMEOUT,
+    .io_timeout = H2O_DEFAULT_HTTP1_REQ_IO_TIMEOUT,
+    .getaddr_receiver = &getaddr_receiver,
+    .max_buffer_size = H2O_SOCKET_INITIAL_INPUT_BUFFER_SIZE * 2,
+};
+
+typedef struct {
+  event_loop_message_t message;
+  h2o_url_t url;
+  char *websocket_key;
+  h2o_websocket_client_conn_t *conn;
+} websocket_connection_ctx_t;
+
+void on_ws_read(h2o_socket_t *sock, const char *err) {
+  if (err == NULL) {
+    h2o_websocket_client_conn_t *conn = sock->data;
+    printf("data?\n");
+    h2o_websocket_client_proceed(conn);
+    h2o_socket_read_start(sock, on_ws_read);
+  }
+}
+int on_ws_connect_body(h2o_httpclient_t *client, const char *errstr, h2o_header_t *trailers,
+                       size_t num_trailers) {
+  websocket_connection_ctx_t *ctx = (websocket_connection_ctx_t *)client->data;
+  if (ctx->conn == NULL) {
+    printf("connected!\n");
+    h2o_websocket_client_conn_t *conn =
+        h2o_upgrade_to_websocket_client(client, client->data, 1, 1, on_ws_client_message);
+    ctx->conn = conn;
+    // Create a Unix domain socket
+    struct sockaddr_un server_addr;
+    int server_fd = websocket_unix_domain_socket(&ctx->message.payload.websocket_connect.uuid,
+                                                 &server_addr, getpid());
+    bind(server_fd, (struct sockaddr *)&server_addr, sizeof(struct sockaddr_un));
+    listen(server_fd, SOMAXCONN);
+
+    h2o_socket_t *sock =
+        h2o_evloop_socket_create(worker_event_loop, server_fd, H2O_SOCKET_FLAG_DONT_READ);
+    sock->data = conn;
+
+    h2o_socket_read_start(sock, on_accept_client_ws_unix);
+
+    handler_message_t *msg = malloc(sizeof(*msg));
+    msg->super = (h2o_multithread_message_t){{NULL}};
+    msg->type = handler_message_websocket_open;
+    memcpy(msg->payload.websocket_open.uuid, ctx->message.payload.websocket_connect.uuid,
+           sizeof(msg->payload.websocket_open.uuid));
+
+    h2o_multithread_send_message(&handler_receiver, &msg->super);
+    h2o_websocket_client_proceed(conn);
+  } else {
+    printf("more??? %s\n", errstr);
+  }
+
+
+  return 0;
+}
+
+h2o_httpclient_body_cb on_ws_connect_head(h2o_httpclient_t *client, const char *errstr,
+                                          h2o_httpclient_on_head_t *args) {
+  if (errstr == NULL) {
+    websocket_connection_ctx_t *ctx = (websocket_connection_ctx_t *)client->data;
+    if (h2o_is_websocket_respheader(args->version, args->status, ctx->websocket_key, args->headers,
+                                    args->num_headers) == 0) {
+
+      return on_ws_connect_body;
+    }
+  } else {
+    printf("%s\n", errstr);
+  }
+  return NULL;
+}
+
+h2o_httpclient_head_cb on_ws_connect(h2o_httpclient_t *client, const char *errstr,
+                                     h2o_iovec_t *method, h2o_url_t *url,
+                                     const h2o_header_t **headers, size_t *num_headers,
+                                     h2o_iovec_t *body,
+                                     h2o_httpclient_proceed_req_cb *proceed_req_cb,
+                                     h2o_httpclient_properties_t *props, h2o_url_t *origin) {
+  if (errstr == NULL) {
+    websocket_connection_ctx_t *ctx = (websocket_connection_ctx_t *)client->data;
+    *num_headers = h2o_websocket_client_create_headers(client->pool, headers, &ctx->websocket_key);
+    *method = h2o_iovec_init(H2O_STRLIT("GET"));
+    memcpy(url, origin, sizeof(*url));
+    *body = h2o_iovec_init(H2O_STRLIT(" "));
+    proceed_req_cb = NULL;
+    return on_ws_connect_head;
+  }
+  printf("Err %s\n", errstr);
+  return NULL;
+}
+
+void on_dgram(h2o_socket_t *sock, const char *err) {
+  if (err != NULL) {
+    return;
+  }
+  h2o_mem_pool_t *pool = malloc(sizeof(*pool));
+  h2o_mem_init_pool(pool);
+  websocket_connection_ctx_t *ctx =
+      (websocket_connection_ctx_t *)h2o_mem_alloc_pool(pool, websocket_connection_ctx_t, 1);
+  recvfrom(dgram_socket, &ctx->message, sizeof(ctx->message), 0, NULL, NULL);
+  switch (ctx->message.type) {
+  case event_loop_message_websocket_connect: {
+
+    h2o_url_parse(pool, ctx->message.payload.websocket_connect.url,
+                  strlen(ctx->message.payload.websocket_connect.url), &ctx->url);
+
+    h2o_httpclient_connect(NULL, pool, ctx, &http_client_ctx, &connpool, &ctx->url, NULL,
+                           on_ws_connect);
+  }
+  }
+}
+
 void *event_loop(void *arg) {
   assert(worker_event_loop != NULL);
   assert(handler_queue != NULL);
@@ -375,6 +556,40 @@ void *event_loop(void *arg) {
 
   bool running = atomic_load(&worker_running);
   bool reload = atomic_load(&worker_reload);
+
+  {
+    // Prepare the connection pool
+
+    // NB: It is very important to init the sockpool *prior* to
+    // registering it in the loop as it will initialize its
+    // content with zeroes.
+    h2o_socketpool_init_global(&sockpool, 128);
+
+    h2o_socketpool_set_timeout(&sockpool, 5000);
+    h2o_socketpool_register_loop(&sockpool, worker_event_loop);
+
+    h2o_httpclient_connection_pool_init(&connpool, &sockpool);
+
+    getaddr_queue = h2o_multithread_create_queue(worker_event_loop);
+    h2o_multithread_register_receiver(getaddr_queue, &getaddr_receiver,
+                                      h2o_hostinfo_getaddr_receiver);
+    http_client_ctx.loop = worker_event_loop;
+  }
+
+  // Setup datagram socket
+  struct sockaddr_un sockaddr;
+  dgram_socket = event_loop_unix_domain_socket(&sockaddr, getpid());
+  if (bind(dgram_socket, (struct sockaddr *)&sockaddr, sizeof(struct sockaddr_un)) == -1) {
+    perror("Warning: failure binding datagram socket. WebSocket client functionality will be "
+           "disabled");
+    close(dgram_socket);
+  } else {
+    h2o_socket_t *sock = h2o_evloop_socket_create(worker_event_loop, dgram_socket,
+                                                  H2O_SOCKET_FLAG_IS_ACCEPTED_CONNECTION |
+                                                      H2O_SOCKET_FLAG_DONT_READ);
+
+    h2o_socket_read_start(sock, on_dgram);
+  }
 
   while (running) {
     if (event_loop_suspended) {
@@ -413,6 +628,8 @@ void *event_loop(void *arg) {
     pthread_cond_signal(&event_loop_resume_cond_ack);
     pthread_mutex_unlock(&event_loop_mutex);
   }
+  // This will clean the socket up
+  close(event_loop_unix_domain_socket(&sockaddr, getpid()));
   return NULL;
 }
 
@@ -473,6 +690,43 @@ static void on_ws_relay_message(h2o_socket_t *sock, const char *err) {
   h2o_socket_read_start(sock, on_ws_relay_message);
 }
 
+static void on_ws_relay_client_message(h2o_socket_t *sock, const char *err) {
+  if (err != NULL) {
+    h2o_socket_close(sock);
+    return;
+  }
+  h2o_websocket_client_conn_t *conn = (h2o_websocket_conn_t *)sock->data;
+
+  while (sock->input->size > 0) {
+    struct {
+      int8_t kind;
+      size_t length;
+    } __attribute__((packed)) *hdr = sock->input->bytes;
+
+    if (sock->input->size < sizeof(*hdr)) {
+      break;
+    }
+
+    if (sock->input->size < sizeof(*hdr) + hdr->length) {
+      break;
+    }
+
+    void *data = sock->input->bytes + sizeof(*hdr);
+
+    const struct wslay_event_msg arg = {.opcode =
+                                            hdr->kind == 0 ? WSLAY_TEXT_FRAME : WSLAY_BINARY_FRAME,
+                                        .msg = data,
+                                        .msg_length = hdr->length};
+    wslay_event_queue_msg(conn->ws_ctx, &arg);
+
+    h2o_buffer_consume(&sock->input, sizeof(*hdr) + hdr->length);
+  }
+
+  h2o_websocket_client_proceed(conn);
+
+  h2o_socket_read_start(sock, on_ws_relay_client_message);
+}
+
 void on_accept_ws_unix(h2o_socket_t *listener, const char *err) {
   h2o_socket_t *sock;
 
@@ -486,6 +740,21 @@ void on_accept_ws_unix(h2o_socket_t *listener, const char *err) {
   sock->data = listener->data;
 
   h2o_socket_read_start(sock, on_ws_relay_message);
+}
+
+void on_accept_client_ws_unix(h2o_socket_t *listener, const char *err) {
+  h2o_socket_t *sock;
+
+  if (err != NULL) {
+    return;
+  }
+
+  if ((sock = h2o_evloop_socket_accept(listener)) == NULL) {
+    return;
+  }
+  sock->data = listener->data;
+
+  h2o_socket_read_start(sock, on_ws_relay_client_message);
 }
 
 void req_dispose(void *ptr) {

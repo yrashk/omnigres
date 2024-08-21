@@ -197,12 +197,15 @@ void http_worker(Datum db_oid) {
   // This MUST happen before starting event_loop
   // AND before unblocking signals as signals use this receiver
   event_loop_register_receiver();
-  pthread_create(&event_loop_thread, NULL, event_loop, NULL);
 
   BackgroundWorkerUnblockSignals();
 
   // Connect worker to the database
   BackgroundWorkerInitializeConnectionByOid(db_oid, InvalidOid, 0);
+
+  // We call it after initializing the connection so that we have access to
+  // GUC values. Not perfect but works for now.
+  pthread_create(&event_loop_thread, NULL, event_loop, NULL);
 
   if (semaphore == NULL) {
     // omni_httpd is being shut down
@@ -1023,7 +1026,9 @@ static int handler(handler_message_t *msg) {
       MemoryContextSwitchTo(memory_context);
       WITH_TEMP_MEMCXT {
         ErrorData *error = CopyErrorData();
-        ereport(WARNING, errmsg("Error executing omni_httpd.on_websocket_message"),
+        ereport(WARNING,
+                errmsg("Error executing omni_httpd.%s",
+                       handler_message_websocket_open ? "websocket_on_open" : "websocket_on_close"),
                 errdetail("%s: %s", error->message, error->detail));
       }
 

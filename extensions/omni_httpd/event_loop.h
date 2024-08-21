@@ -134,6 +134,7 @@ h2o_accept_ctx_t *listener_accept_ctx(h2o_socket_t *listener);
 void on_accept(h2o_socket_t *listener, const char *err);
 
 void on_accept_ws_unix(h2o_socket_t *listener, const char *err);
+void on_accept_client_ws_unix(h2o_socket_t *listener, const char *err);
 
 /**
  * `worker_event_loop` should be setup to use this handler
@@ -186,5 +187,22 @@ void event_loop_register_receiver();
  */
 int websocket_unix_domain_socket(websocket_uuid_t *uuid, struct sockaddr_un *server_addr,
                                  bool producer);
+
+/**
+ * Prepares a UNIX domain socket for event loops
+ */
+int event_loop_unix_domain_socket(struct sockaddr_un *server_addr, pid_t pid);
+
+typedef struct {
+  enum { event_loop_message_websocket_connect } type;
+  union {
+    struct {
+      websocket_uuid_t uuid;
+      char url[769];
+    } websocket_connect;
+  } payload;
+} event_loop_message_t;
+
+_Static_assert(sizeof(event_loop_message_t) < IOV_MAX, "must fit into a Unix datagram message");
 
 #endif // OMNI_HTTPD_EVENT_LOOP_H
