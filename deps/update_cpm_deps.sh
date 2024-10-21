@@ -23,4 +23,4 @@ do
   # files in these repos
   git add -f --all "${name}"
 
-done < "dependencies.txt"
+done  < <(printf '%s\n' "$(cat dependencies.txt)")
