@@ -15,7 +15,7 @@ begin
                from omni_sql.raw_statements(stmt::cstring)
         loop
             if not rec.last then
-                execute rec.stmt;
+                perform omni_sql.execute_parameterized(rec.stmt, parameters, types);
             else
                 for retrec in select omni_sql.execute_parameterized(rec.stmt, parameters, types) val
                     loop

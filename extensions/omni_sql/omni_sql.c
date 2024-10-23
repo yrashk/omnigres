@@ -8,6 +8,7 @@
 #include <fmgr.h>
 // clang-format on
 #include <catalog/pg_type.h>
+#include <common/hashfn.h>
 #include <executor/spi.h>
 #include <miscadmin.h>
 #include <utils/jsonb.h>
@@ -591,8 +592,8 @@ PG_FUNCTION_INFO_V1(execute_parameterized);
  * with parameters of a prepared statement.
  */
 typedef struct ExecCtx {
-  // the actual statement to be executed.
-  char *stmt;
+  // plan to be executed
+  SPIPlanPtr plan;
   // returning is important to see if a given statement returns tuples
   // to the caller. This controls the flow of the main function
   bool returning;
@@ -718,6 +719,26 @@ static inline void extract_information_json_types(ExecCtx *call_ctx, ArrayType *
   array_free_iterator(iter);
 }
 
+typedef struct {
+  char *stmt;
+  uint32 status;
+  SPIPlanPtr plan;
+} PreparedStatementEntry;
+
+#define SH_PREFIX preparedstmthash
+#define SH_ELEMENT_TYPE PreparedStatementEntry
+#define SH_KEY_TYPE char *
+#define SH_KEY stmt
+#define SH_HASH_KEY(tb, key) string_hash(key, strlen(key))
+#define SH_EQUAL(tb, a, b) (strcmp(a, b) == 0)
+#define SH_SCOPE static inline
+#define SH_DECLARE
+#define SH_DEFINE
+#include <lib/simplehash.h>
+
+static preparedstmthash_hash *stmthash = NULL;
+static MemoryContext ExecutePreparedStatements;
+
 Datum execute_parameterized(PG_FUNCTION_ARGS) {
   FuncCallContext *funcctx;
   if (SRF_IS_FIRSTCALL()) {
@@ -732,7 +753,6 @@ Datum execute_parameterized(PG_FUNCTION_ARGS) {
     char *cstatement = text_to_cstring(statement);
 
     ExecCtx *call_ctx = palloc(sizeof(*call_ctx));
-    call_ctx->stmt = cstatement;
     call_ctx->done = false;
     call_ctx->portal = NULL;
 
@@ -747,15 +767,23 @@ Datum execute_parameterized(PG_FUNCTION_ARGS) {
     }
     SPI_connect();
     // Prepare the cursor
-    SPIPlanPtr plan = SPI_prepare(call_ctx->stmt, call_ctx->nargs, call_ctx->types);
+    bool found;
+    PreparedStatementEntry *entry = preparedstmthash_insert(
+        stmthash, MemoryContextStrdup(ExecutePreparedStatements, cstatement), &found);
+    if (!found) {
+      entry->plan = SPI_prepare(cstatement, call_ctx->nargs, call_ctx->types);
+      SPI_keepplan(entry->plan);
+    }
+    call_ctx->plan = entry->plan;
+
     // is this a plan that could return rows?
-    call_ctx->returning = SPI_is_cursor_plan(plan);
+    call_ctx->returning = SPI_is_cursor_plan(call_ctx->plan);
     if (call_ctx->returning) {
-      if (plan == NULL) {
+      if (call_ctx->plan == NULL) {
         ereport(ERROR, errmsg("%s", SPI_result_code_string(SPI_result)));
       }
-      call_ctx->portal =
-          SPI_cursor_open("_omni_sql_execute", plan, call_ctx->values, call_ctx->nulls, false);
+      call_ctx->portal = SPI_cursor_open("_omni_sql_execute", call_ctx->plan, call_ctx->values,
+                                         call_ctx->nulls, false);
       // Fetch zero records just to get the tupdesc
       SPI_cursor_fetch(call_ctx->portal, true, 0);
       // Switch to multi-call memory instead of SPI
@@ -811,8 +839,7 @@ Datum execute_parameterized(PG_FUNCTION_ARGS) {
 
     SPI_connect();
 
-    int rc = SPI_execute_with_args(call_ctx->stmt, call_ctx->nargs, call_ctx->types,
-                                   call_ctx->values, call_ctx->nulls, false, 0);
+    int rc = SPI_execute_plan(call_ctx->plan, call_ctx->values, call_ctx->nulls, false, 0);
     if (rc < 0) {
       ereport(ERROR, errmsg("%s", SPI_result_code_string(rc)));
     }
@@ -827,5 +854,17 @@ Datum execute_parameterized(PG_FUNCTION_ARGS) {
 
     call_ctx->done = true;
     SRF_RETURN_NEXT(funcctx, result);
+  }
+}
+
+static inline void init_preparedstmthash() {
+  stmthash = preparedstmthash_create(ExecutePreparedStatements, 8192, NULL);
+}
+
+void _PG_init(void) {
+  ExecutePreparedStatements = AllocSetContextCreate(
+      TopMemoryContext, "omni_sql: prepared statements", ALLOCSET_DEFAULT_SIZES);
+  if (stmthash == NULL) {
+    init_preparedstmthash();
   }
 }
