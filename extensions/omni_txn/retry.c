@@ -120,30 +120,8 @@ Datum retry(PG_FUNCTION_ARGS) {
   text *stmts = PG_GETARG_TEXT_PP(0);
   char *cstmts = MemoryContextStrdup(RetryPreparedStatementMemoryContext, text_to_cstring(stmts));
 
-  int original_default_iso_level = DefaultXactIsoLevel;
-
   int intended_iso_level =
       (!PG_ARGISNULL(2) && PG_GETARG_BOOL(2)) ? XACT_REPEATABLE_READ : XACT_SERIALIZABLE;
-
-  if (ActiveSnapshotSet() && XactIsoLevel != intended_iso_level) {
-    // We redo the snapshots because there's a chance the planner took out a snapshot
-    // without having a new isolation level set. It is the code that looks like this:
-    // ```c
-    // if (analyze_requires_snapshot(parsetree))
-    // {
-    //    PushActiveSnapshot(GetTransactionSnapshot());
-    //    snapshot_set = true;
-    // }
-    // ```
-    //    MemoryContext oldcontext = CurrentMemoryContext;
-    while (ActiveSnapshotSet()) {
-      PopActiveSnapshot();
-    }
-    // Ensures the new iso level is picked up
-    FirstSnapshotSet = false;
-    DefaultXactIsoLevel = XactIsoLevel = intended_iso_level;
-    PushActiveSnapshot(GetTransactionSnapshot());
-  }
 
   // Default values are prepared for the case when no `params` are set
   int paramsCount = 0;
@@ -182,7 +160,6 @@ Datum retry(PG_FUNCTION_ARGS) {
         Oid att_type_oid = TupleDescAttr(paramsTupDesc, i)->atttypid; // Attribute type OID
         if (att_type_oid == UNKNOWNOID) {
           ReleaseTupleDesc(paramsTupDesc);
-          DefaultXactIsoLevel = original_default_iso_level;
           ereport(ERROR, errmsg("query parameter %d is of unknown type", i + 1));
         }
         paramsNullChars[i] = paramsNulls[i] ? 'n' : ' ';
@@ -191,6 +168,22 @@ Datum retry(PG_FUNCTION_ARGS) {
 
       ReleaseTupleDesc(paramsTupDesc);
     }
+  }
+
+  SPI_connect_ext(SPI_OPT_NONATOMIC);
+
+  if (ActiveSnapshotSet() && XactIsoLevel != intended_iso_level) {
+    // We roll back because there's a chance the planner took out a snapshot
+    // without having a new isolation level set. It is the code that looks like this:
+    // ```c
+    // if (analyze_requires_snapshot(parsetree))
+    // {
+    //    PushActiveSnapshot(GetTransactionSnapshot());
+    //    snapshot_set = true;
+    // }
+    // ```
+    SPI_rollback();
+    XactIsoLevel = intended_iso_level;
   }
 
   // If `linearize` is set to true
@@ -207,27 +200,43 @@ Datum retry(PG_FUNCTION_ARGS) {
   }
   bool retry = true;
   retry_attempts = 0;
+
+  bool found;
+  PreparedStatementEntry *entry = preparedstmthash_insert(stmthash, cstmts, &found);
+  if (!found) {
+    entry->plan = SPI_prepare(cstmts, paramsCount, paramsTypes);
+    SPI_keepplan(entry->plan);
+  }
+
   while (retry) {
-    SPI_connect_ext(SPI_OPT_NONATOMIC);
     MemoryContext current_mcxt = CurrentMemoryContext;
+    Snapshot previous_snapshot = ActiveSnapshotSet() ? GetActiveSnapshot() : NULL;
+    ErrorContextCallback *previous_error_context = error_context_stack;
+    SPITupleTable *previous_tuptable = SPI_tuptable;
     PG_TRY();
     {
-      bool found;
-      PreparedStatementEntry *entry = preparedstmthash_insert(stmthash, cstmts, &found);
-      if (!found) {
-        entry->plan = SPI_prepare(cstmts, paramsCount, paramsTypes);
-        SPI_keepplan(entry->plan);
-      }
       SPI_execute_plan(entry->plan, paramsValues, paramsNullChars, false, 0);
-      SPI_finish();
+      SPI_commit();
       retry = false;
     }
     PG_CATCH();
     {
       MemoryContextSwitchTo(current_mcxt);
-      SPI_finish();
       ErrorData *err = CopyErrorData();
-      if (err->sqlerrcode == ERRCODE_T_R_SERIALIZATION_FAILURE) {
+      int sqlerrcode = err->sqlerrcode;
+      FreeErrorData(err);
+      if (sqlerrcode == ERRCODE_T_R_SERIALIZATION_FAILURE) {
+        error_context_stack = previous_error_context;
+        FlushErrorState();
+        // Before we can proceed, we need to pop a snapshot that
+        // has been taken out. This is a little bit contentious because
+        // we rely on the internal knowledge of what `_SPI_execute_plan` does.
+        // and it doesn't provide external indication whether it has taken a snapshot.
+        // To do this, we check if the snapshot has changed – but this may not be
+        // able to address anything else but straightforward pushing of a new snapshot
+        if (ActiveSnapshotSet() && previous_snapshot != GetActiveSnapshot()) {
+          PopActiveSnapshot();
+        }
         if (++retry_attempts <= max_attempts) {
           int64 backoff_with_jitter_in_microsecs =
               backoff_jitter(cap_sleep_microsecs, base_sleep_microsecs, retry_attempts);
@@ -242,42 +251,34 @@ Datum retry(PG_FUNCTION_ARGS) {
             // go back to the context where we were
             MemoryContextSwitchTo(current_mcxt);
           }
-          // abort current transaction
-          PopActiveSnapshot();
-          AbortCurrentTransaction();
-          // backoff a little to avoid contention
-          // add to list
-          DirectFunctionCall1(pg_sleep, Float8GetDatum(to_secs(backoff_with_jitter_in_microsecs)));
-          // start a new transaction
-          SetCurrentStatementStartTimestamp();
-          StartTransactionCommand();
-          PushActiveSnapshot(GetTransactionSnapshot());
 
+          // abort current transaction and start a new one
+          while (SPI_tuptable != previous_tuptable) {
+            SPI_finish();
+          }
+          SPI_rollback_and_chain();
+          // back off
+          DirectFunctionCall1(pg_sleep, Float8GetDatum(to_secs(backoff_with_jitter_in_microsecs)));
+          CHECK_FOR_INTERRUPTS();
         } else {
           // abort the attempt to run the code.
-          DefaultXactIsoLevel = original_default_iso_level;
-          ereport(ERROR, errcode(err->sqlerrcode),
+          while (SPI_tuptable != previous_tuptable) {
+            SPI_finish();
+          }
+          SPI_rollback();
+          ereport(ERROR, errcode(sqlerrcode),
                   errmsg("maximum number of retries (%d) has been attempted", max_attempts));
         }
       } else {
         retry_attempts = 0;
-        DefaultXactIsoLevel = original_default_iso_level;
         PG_RE_THROW();
       }
-      CHECK_FOR_INTERRUPTS();
-      FlushErrorState();
     }
 
     PG_END_TRY();
   }
 
-  if (ActiveSnapshotSet()) {
-    PopActiveSnapshot();
-  }
-  if (ActivePortal) {
-    ActivePortal->portalSnapshot = NULL;
-  }
-  DefaultXactIsoLevel = original_default_iso_level;
+  SPI_finish();
   PG_RETURN_VOID();
 }
 
