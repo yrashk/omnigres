@@ -4,12 +4,13 @@ create procedure postgrest_get(request omni_httpd.http_request, outcome inout om
 $$
 declare
     namespace text;
-    columns   text[];
+    query_columns   text[];
     query     text;
     result   jsonb;
     params    text[];
     col       text;
     _select   text;
+    _where   text;
     _offset numeric;
     relation regclass;
 begin
@@ -28,12 +29,12 @@ begin
     params := omni_web.parse_query_string(request.query_string);
 
     -- Columns (vertical filtering)
-    columns := array ['*'];
+    query_columns := array ['*'];
 
     _select = omni_web.param_get(params, 'select');
 
     if _select is not null and _select != '' then
-        columns := array []::text[];
+        query_columns := array []::text[];
 
     foreach col in array string_to_array(_select, ',')
         loop
@@ -89,26 +90,74 @@ begin
                     -- TODO: record access using ->
                 end if;
                 -- TODO: sanitize col_expr
-                columns := columns || (relation || '.' || col_expr || ' as "' || col_alias || '"');
+                query_columns := query_columns || (relation || '.' || col_expr || ' as "' || col_alias || '"');
             end;
         end loop;
     end if;
 
+    with indexed_params as (
+      select * 
+      from unnest(params) with ordinality r(param,index)
+    ),
+    comparisons as (
+    select 
+      columns.param, 
+      case split_part(values.param, '.', 1) 
+      when 'eq' THEN '=' 
+      when 'gt' THEN '>' 
+      when 'lt' THEN '<' 
+      end as operator, 
+      split_part(values.param, '.', 2) as value
+    from 
+      indexed_params columns 
+      join indexed_params values on columns.index % 2 = 1 and values.index % 2 = 0 and columns.index = values.index - 1
+    )
+    select 
+      string_agg(format('%1$I %2$s %3$L', param, operator, value), ' AND ') as comparison 
+    from comparisons 
+    where param not in ('select')
+    into _where
+    ;
+
     _offset := 0;
 
     -- Finalize the query
-    query := format('select %3$s from %1$I.%2$I', namespace, (select relname from pg_class where oid = relation),
-                    concat_ws(', ', variadic columns));
+    query := format(
+      'select %3$s from %1$I.%2$I where %4$s',
+      namespace,
+      (select relname from pg_class where oid = relation),
+      concat_ws(', ', variadic query_columns),
+      coalesce(_where, 'true')
+    );
 
     -- Run it
-    select jsonb_agg(stmt_row)
-    into result
-    from omni_sql.execute(query);
+    declare
+      message text;
+      detail text;
+      hint text;
+    begin
+      select coalesce(jsonb_agg(stmt_row), '[]'::jsonb)
+      into result
+      from omni_sql.execute(query);
 
-    outcome := omni_httpd.http_response(result,
-                                        headers => array [omni_http.http_header('Content-Range',
-                                                                            _offset || '-' ||
-                                                                            jsonb_array_length(result) ||
-                                                                            '/*')]);
+      outcome := omni_httpd.http_response(
+        result,
+        headers => array [omni_http.http_header('Content-Range', _offset || '-' || jsonb_array_length(result) ||'/*')]
+      );
+    exception
+      when others then
+        GET STACKED DIAGNOSTICS message = MESSAGE_TEXT,
+                                detail = PG_EXCEPTION_DETAIL,
+                                hint = PG_EXCEPTION_HINT;
+        outcome := omni_httpd.http_response(
+          jsonb_build_object(
+            'message', message
+            , 'detail', detail
+            , 'hint', hint
+          ),
+          status => 400
+        );
+    end;
+
 end;
 $$;
