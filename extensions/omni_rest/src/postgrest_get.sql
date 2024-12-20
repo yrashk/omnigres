@@ -11,6 +11,7 @@ declare
     col       text;
     _select   text;
     _where   text;
+    _order   text;
     _offset numeric;
     relation regclass;
 begin
@@ -106,6 +107,8 @@ begin
       when 'eq' THEN '=' 
       when 'gt' THEN '>' 
       when 'lt' THEN '<' 
+      when 'gte' THEN '>=' 
+      when 'lte' THEN '<=' 
       end as operator, 
       split_part(values.param, '.', 2) as value
     from 
@@ -115,19 +118,29 @@ begin
     select 
       string_agg(format('%1$I %2$s %3$L', param, operator, value), ' AND ') as comparison 
     from comparisons 
-    where param not in ('select')
+    where param not in ('select', 'order')
     into _where
     ;
 
     _offset := 0;
 
+    select 'ORDER BY ' || string_agg(format(
+      '%1$I %2$s'
+      , split_part(o, '.', 1)
+      -- FIXME: we should error instead of using a default on invalid ordering clauses
+      , CASE lower(split_part(o, '.', 2)) WHEN 'desc' THEN 'desc' ELSE 'asc' END
+    ), ',') 
+    from unnest(regexp_split_to_array(omni_web.param_get(params, 'order'), ',')) o
+    into _order;
+
     -- Finalize the query
     query := format(
-      'select %3$s from %1$I.%2$I where %4$s',
-      namespace,
-      (select relname from pg_class where oid = relation),
-      concat_ws(', ', variadic query_columns),
-      coalesce(_where, 'true')
+      'select %3$s from %1$I.%2$I where %4$s %5$s'
+      , namespace
+      , (select relname from pg_class where oid = relation)
+      , concat_ws(', ', variadic query_columns)
+      , coalesce(_where, 'true')
+      , _order
     );
 
     -- Run it
@@ -141,8 +154,8 @@ begin
       from omni_sql.execute(query);
 
       outcome := omni_httpd.http_response(
-        result,
-        headers => array [omni_http.http_header('Content-Range', _offset || '-' || jsonb_array_length(result) ||'/*')]
+        result
+        , headers => array [omni_http.http_header('Content-Range', _offset || '-' || jsonb_array_length(result) ||'/*')]
       );
     exception
       when others then
