@@ -114,8 +114,8 @@ begin
       when 'like' THEN 'like' 
       when 'ilike' THEN 'ilike' 
       when 'match' THEN '~' 
-      when 'imatch' THEN '~*' 
-
+      when 'imatch' THEN '~*'
+      else 'invalid_operator'
       end as operator, 
       split_part(values.param, '.', 2) as value
     from 
