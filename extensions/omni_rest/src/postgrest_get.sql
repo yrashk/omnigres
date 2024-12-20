@@ -1,35 +1,217 @@
-create function postgrest_parse_get_param(params text[]) RETURNS text AS $$
+create function postgrest_convert_operator(operator_name text)
+  returns text
+  immutable
+  language sql as
+$$
+  select
+      case operator_name
+        when 'eq' THEN '=' 
+        when 'neq' THEN '<>' 
+        when 'isdistinct' THEN 'is distinct from ' 
+        when 'gt' THEN '>' 
+        when 'lt' THEN '<' 
+        when 'gte' THEN '>=' 
+        when 'lte' THEN '<=' 
+        when 'like' THEN 'like' 
+        when 'ilike' THEN 'ilike' 
+        when 'match' THEN '~' 
+        when 'imatch' THEN '~*'
+        when 'not' THEN 'not'
+      end;
+$$;
+
+create or replace function postgrest_parse_logical(input text)
+returns jsonb language plpgsql as $$
+declare
+    result jsonb := '[]'; -- initialize an empty json array
+    current text := '';
+    current_production text := '';
+    depth int := 0;
+    token text;
+    sublist text[];
+begin
+    -- no nesting, just split and return
+    if input !~ '[()]' then
+      select jsonb_agg(
+        jsonb_build_object(
+          'operator'
+          , omni_rest.postgrest_convert_operator(split_part(term, '.', 2))
+          , 'operands'
+          , jsonb_build_array(split_part(term, '.', 1), split_part(term, '.', 3))
+        )
+      ) from unnest(string_to_array(input, ',')) term
+      into result;
+      return result;
+    end if;
+
+    -- iterate through the string character by character
+    foreach token in array regexp_split_to_array(input, '')
+    loop
+        if token = '(' then
+            if depth > 0 then
+              current := current || token;
+            end if;
+            depth := depth + 1;
+        elsif token = ')' then
+            depth := depth - 1;
+            if depth > 0 then
+              current := current || token;
+            end if;
+
+            -- if we finish a nested expression, process it
+            if depth = 0 then
+                result := 
+                    result || case lower(current_production)
+                        when '' then omni_rest.postgrest_parse_logical(current) 
+                        when 'not.and' then jsonb_build_object(
+                          'operator'
+                          , 'not'
+                          , 'operands'
+                          , jsonb_build_array(jsonb_build_object('operator', 'and', 'operands',omni_rest.postgrest_parse_logical(current)))
+                        )
+                        when 'not' then jsonb_build_object(
+                          'operator'
+                          , 'not'
+                          , 'operands'
+                          , omni_rest.postgrest_parse_logical(current)
+                        )
+                    end;
+                current := '';
+            end if;
+        elsif depth > 0 then
+            current := current || token;
+        end if;
+
+        if depth = 0 then
+            if token = ',' then
+                if current_production !~ '[()]' then
+                    result := result || jsonb_build_array(jsonb_build_object(
+                      'operator'
+                      , omni_rest.postgrest_convert_operator(split_part(current_production, '.', 2))
+                      , 'operands'
+                      , jsonb_build_array(split_part(current_production, '.', 1), split_part(current_production, '.', 3))
+                    ));
+                end if;
+                current_production := '';
+            else
+                current_production := current_production || token;
+            end if;
+        end if;
+    end loop;
+    if current_production !~ '[()]' then
+        result := result || jsonb_build_array(jsonb_build_object(
+          'operator'
+          , omni_rest.postgrest_convert_operator(split_part(current_production, '.', 2))
+          , 'operands'
+          , jsonb_build_array(split_part(current_production, '.', 1), split_part(current_production, '.', 3))
+        ));
+    end if;
+
+    return result;
+end;
+$$;
+
+create function postgrest_parse_get_param(params text[]) 
+    returns jsonb 
+    immutable
+    language sql as 
+$$
     with indexed_params as (
       select * 
       from unnest(params) with ordinality r(param,index)
     ),
     comparisons as (
     select 
-      columns.param, 
-      case split_part(values.param, '.', 1) 
-      when 'eq' THEN '=' 
-      when 'neq' THEN '<>' 
-      when 'isdistinct' THEN 'is distinct from ' 
-      when 'gt' THEN '>' 
-      when 'lt' THEN '<' 
-      when 'gte' THEN '>=' 
-      when 'lte' THEN '<=' 
-      when 'like' THEN 'like' 
-      when 'ilike' THEN 'ilike' 
-      when 'match' THEN '~' 
-      when 'imatch' THEN '~*'
-      else 'invalid_operator'
-      end as operator, 
-      split_part(values.param, '.', 2) as value
+      lower(columns.param) as key, 
+      values.param as value,
+      omni_rest.postgrest_convert_operator(split_part(values.param, '.', 1)) as first_operator,
+      omni_rest.postgrest_convert_operator(split_part(values.param, '.', 2)) as second_operator
     from 
       indexed_params columns 
       join indexed_params values on columns.index % 2 = 1 and values.index % 2 = 0 and columns.index = values.index - 1
     )
     select 
-      string_agg(format('%1$I %2$s %3$L', param, operator, value), ' AND ') as comparison 
+      jsonb_build_object(
+        'operator', 'and'
+        , 'operands', coalesce(jsonb_agg(
+          case
+            when key = 'or' then
+              jsonb_build_object(
+                'operator', 'or'
+                , 'operands', omni_rest.postgrest_parse_logical(value)
+              )
+            when first_operator = 'not' then
+              jsonb_build_object(
+                'operator', 'not'
+                , 'operands', jsonb_build_array( 
+                  jsonb_build_object(
+                    'operator', second_operator
+                    , 'operands', jsonb_build_array(key, split_part(value, '.', 3))
+                  )
+                )
+              )
+            when first_operator is not null then
+              jsonb_build_object(
+                'operator', first_operator
+                , 'operands', jsonb_build_array(key, split_part(value, '.', 2))
+              )
+            else
+              jsonb_build_object(
+                'operator', 'invalid_operator'
+                , 'operands', '[]'::jsonb
+              )
+          end
+        ), '[]'::jsonb)
+      )
     from comparisons 
-    where param not in ('select', 'order')
-$$ language sql;
+    where key not in ('select', 'order')
+$$;
+
+create function postgrest_format_get_param(where_ast jsonb) returns text
+    immutable
+    language plpgsql as
+$$
+declare
+  output text;
+begin
+    select 
+        case where_ast->>'operator'
+          when 'invalid_operator' then
+            'invalid_operator invalid_operator'
+          when 'not' then
+            format(
+              'not (%1$s)',
+              omni_rest.postgrest_format_get_param(where_ast->'operands'->0)
+            )
+          when 'and' then
+            (
+              select 
+                    string_agg(
+                          omni_rest.postgrest_format_get_param(op), ' and '
+                    )
+              from jsonb_array_elements(where_ast->'operands') op
+            )
+          when 'or' then
+            (
+              select 
+                    string_agg(
+                          omni_rest.postgrest_format_get_param(op), ' or '
+                    )
+              from jsonb_array_elements(where_ast->'operands') op
+            )
+          else
+            format(
+              '%1$I %2$s %3$L',
+              where_ast->'operands'->>0,
+              where_ast->>'operator',
+              where_ast->'operands'->>1
+            )
+        end
+    into output;
+
+    return output;
+end;
+$$;
 
 create procedure postgrest_get(request omni_httpd.http_request, outcome inout omni_httpd.http_outcome,
                                settings postgrest_settings default postgrest_settings())
@@ -129,7 +311,7 @@ begin
         end loop;
     end if;
 
-    _where := omni_rest.postgrest_parse_get_param(params);
+    _where := omni_rest.postgrest_format_get_param(omni_rest.postgrest_parse_get_param(params));
 
     _offset := 0;
 
