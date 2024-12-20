@@ -1,3 +1,36 @@
+create function postgrest_parse_get_param(params text[]) RETURNS text AS $$
+    with indexed_params as (
+      select * 
+      from unnest(params) with ordinality r(param,index)
+    ),
+    comparisons as (
+    select 
+      columns.param, 
+      case split_part(values.param, '.', 1) 
+      when 'eq' THEN '=' 
+      when 'neq' THEN '<>' 
+      when 'isdistinct' THEN 'is distinct from ' 
+      when 'gt' THEN '>' 
+      when 'lt' THEN '<' 
+      when 'gte' THEN '>=' 
+      when 'lte' THEN '<=' 
+      when 'like' THEN 'like' 
+      when 'ilike' THEN 'ilike' 
+      when 'match' THEN '~' 
+      when 'imatch' THEN '~*'
+      else 'invalid_operator'
+      end as operator, 
+      split_part(values.param, '.', 2) as value
+    from 
+      indexed_params columns 
+      join indexed_params values on columns.index % 2 = 1 and values.index % 2 = 0 and columns.index = values.index - 1
+    )
+    select 
+      string_agg(format('%1$I %2$s %3$L', param, operator, value), ' AND ') as comparison 
+    from comparisons 
+    where param not in ('select', 'order')
+$$ language sql;
+
 create procedure postgrest_get(request omni_httpd.http_request, outcome inout omni_httpd.http_outcome,
                                settings postgrest_settings default postgrest_settings())
     language plpgsql as
@@ -96,38 +129,7 @@ begin
         end loop;
     end if;
 
-    with indexed_params as (
-      select * 
-      from unnest(params) with ordinality r(param,index)
-    ),
-    comparisons as (
-    select 
-      columns.param, 
-      case split_part(values.param, '.', 1) 
-      when 'eq' THEN '=' 
-      when 'neq' THEN '<>' 
-      when 'isdistinct' THEN 'is distinct from ' 
-      when 'gt' THEN '>' 
-      when 'lt' THEN '<' 
-      when 'gte' THEN '>=' 
-      when 'lte' THEN '<=' 
-      when 'like' THEN 'like' 
-      when 'ilike' THEN 'ilike' 
-      when 'match' THEN '~' 
-      when 'imatch' THEN '~*'
-      else 'invalid_operator'
-      end as operator, 
-      split_part(values.param, '.', 2) as value
-    from 
-      indexed_params columns 
-      join indexed_params values on columns.index % 2 = 1 and values.index % 2 = 0 and columns.index = values.index - 1
-    )
-    select 
-      string_agg(format('%1$I %2$s %3$L', param, operator, value), ' AND ') as comparison 
-    from comparisons 
-    where param not in ('select', 'order')
-    into _where
-    ;
+    _where := omni_rest.postgrest_parse_get_param(params);
 
     _offset := 0;
 
