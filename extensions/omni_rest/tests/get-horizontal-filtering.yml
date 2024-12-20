@@ -130,6 +130,46 @@ tests:
       email: john@doe.com
       profile_info: null
 
+- name: Not equal
+  query: |
+    with response as (select * from make_request('/users?id=neq.1'))
+    select response.status,
+           (select json_agg(json_build_object(h.name, h.value))
+            from unnest(response.headers) h
+            where h.name not in ('server', 'content-length', 'connection')) as headers,
+           convert_from(response.body, 'utf-8')::json                       as body
+    from response
+  results:
+  - status: 200
+    headers:
+    - content-range: 0-1/*
+    - content-type: application/json
+    body:
+    - id: 2
+      name: Jane Doe
+      email: jane@doe.com
+      profile_info: null
+
+- name: Is distinct from
+  query: |
+    with response as (select * from make_request('/users?id=isdistinct.1'))
+    select response.status,
+           (select json_agg(json_build_object(h.name, h.value))
+            from unnest(response.headers) h
+            where h.name not in ('server', 'content-length', 'connection')) as headers,
+           convert_from(response.body, 'utf-8')::json                       as body
+    from response
+  results:
+  - status: 200
+    headers:
+    - content-range: 0-1/*
+    - content-type: application/json
+    body:
+    - id: 2
+      name: Jane Doe
+      email: jane@doe.com
+      profile_info: null
+
 - name: Inequality operators (lt & gt)
   query: |
     with response as (select * from make_request('/users?id=gt.1&name=lt.John+Doe'))
@@ -175,6 +215,98 @@ tests:
       profile_info: null
 
           
-          
-          
-          
+- name: Like operator
+  query: |
+    with response as (select * from make_request('/users?name=like.%Doe%&order=id'))
+    select response.status,
+           (select json_agg(json_build_object(h.name, h.value))
+            from unnest(response.headers) h
+            where h.name not in ('server', 'content-length', 'connection')) as headers,
+           convert_from(response.body, 'utf-8')::json                       as body
+    from response
+  results:
+  - status: 200
+    headers:
+    - content-range: 0-2/*
+    - content-type: application/json
+    body:
+    - id: 1
+      name: John Doe
+      email: john@doe.com
+      profile_info: null
+    - id: 2
+      name: Jane Doe
+      email: jane@doe.com
+      profile_info: null
+
+- name: Ilike operator
+  query: |
+    with response as (select * from make_request('/users?name=ilike.%doe%&order=id'))
+    select response.status,
+           (select json_agg(json_build_object(h.name, h.value))
+            from unnest(response.headers) h
+            where h.name not in ('server', 'content-length', 'connection')) as headers,
+           convert_from(response.body, 'utf-8')::json                       as body
+    from response
+  results:
+  - status: 200
+    headers:
+    - content-range: 0-2/*
+    - content-type: application/json
+    body:
+    - id: 1
+      name: John Doe
+      email: john@doe.com
+      profile_info: null
+    - id: 2
+      name: Jane Doe
+      email: jane@doe.com
+      profile_info: null
+
+- name: Match operator
+  query: |
+    with response as (select * from make_request('/users?name=match.Doe&order=id'))
+    select response.status,
+           (select json_agg(json_build_object(h.name, h.value))
+            from unnest(response.headers) h
+            where h.name not in ('server', 'content-length', 'connection')) as headers,
+           convert_from(response.body, 'utf-8')::json                       as body
+    from response
+  results:
+  - status: 200
+    headers:
+    - content-range: 0-2/*
+    - content-type: application/json
+    body:
+    - id: 1
+      name: John Doe
+      email: john@doe.com
+      profile_info: null
+    - id: 2
+      name: Jane Doe
+      email: jane@doe.com
+      profile_info: null
+
+- name: Imatch operator
+  query: |
+    with response as (select * from make_request('/users?name=imatch.doe&order=id'))
+    select response.status,
+           (select json_agg(json_build_object(h.name, h.value))
+            from unnest(response.headers) h
+            where h.name not in ('server', 'content-length', 'connection')) as headers,
+           convert_from(response.body, 'utf-8')::json                       as body
+    from response
+  results:
+  - status: 200
+    headers:
+    - content-range: 0-2/*
+    - content-type: application/json
+    body:
+    - id: 1
+      name: John Doe
+      email: john@doe.com
+      profile_info: null
+    - id: 2
+      name: Jane Doe
+      email: jane@doe.com
+      profile_info: null

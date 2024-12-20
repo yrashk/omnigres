@@ -105,10 +105,17 @@ begin
       columns.param, 
       case split_part(values.param, '.', 1) 
       when 'eq' THEN '=' 
+      when 'neq' THEN '<>' 
+      when 'isdistinct' THEN 'is distinct from ' 
       when 'gt' THEN '>' 
       when 'lt' THEN '<' 
       when 'gte' THEN '>=' 
       when 'lte' THEN '<=' 
+      when 'like' THEN 'like' 
+      when 'ilike' THEN 'ilike' 
+      when 'match' THEN '~' 
+      when 'imatch' THEN '~*' 
+
       end as operator, 
       split_part(values.param, '.', 2) as value
     from 
