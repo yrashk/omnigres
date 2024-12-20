@@ -146,9 +146,9 @@ begin
       );
     exception
       when others then
-        GET STACKED DIAGNOSTICS message = MESSAGE_TEXT,
-                                detail = PG_EXCEPTION_DETAIL,
-                                hint = PG_EXCEPTION_HINT;
+        get stacked diagnostics message = message_text,
+                                detail = pg_exception_detail,
+                                hint = pg_exception_hint;
         outcome := omni_httpd.http_response(
           jsonb_build_object(
             'message', message
