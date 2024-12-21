@@ -135,6 +135,11 @@ $$
         'operator', 'and'
         , 'operands', coalesce(jsonb_agg(
           case
+            when key = 'and' then
+              jsonb_build_object(
+                'operator', 'and'
+                , 'operands', omni_rest.postgrest_parse_logical(value)
+              )
             when key = 'or' then
               jsonb_build_object(
                 'operator', 'or'
