@@ -135,10 +135,30 @@ $$
         'operator', 'and'
         , 'operands', coalesce(jsonb_agg(
           case
+            when key = 'not.and' then
+              jsonb_build_object(
+                'operator', 'not'
+                , 'operands', jsonb_build_array( 
+                  jsonb_build_object(
+                    'operator', 'and'
+                    , 'operands', omni_rest.postgrest_parse_logical(value)
+                  )
+                )
+              )
             when key = 'and' then
               jsonb_build_object(
                 'operator', 'and'
                 , 'operands', omni_rest.postgrest_parse_logical(value)
+              )
+            when key = 'not.or' then
+              jsonb_build_object(
+                'operator', 'not'
+                , 'operands', jsonb_build_array( 
+                  jsonb_build_object(
+                    'operator', 'or'
+                    , 'operands', omni_rest.postgrest_parse_logical(value)
+                  )
+                )
               )
             when key = 'or' then
               jsonb_build_object(
