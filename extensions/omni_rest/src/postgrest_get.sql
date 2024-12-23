@@ -70,6 +70,12 @@ begin
                 result := result || case lower(current_production)
                 when '' then
                     omni_rest.postgrest_parse_logical (current)
+                when 'or' then
+                    jsonb_build_object('operator', 'or', 'operands', omni_rest.postgrest_parse_logical (current))
+                when 'and' then
+                    jsonb_build_object('operator', 'and', 'operands', omni_rest.postgrest_parse_logical (current))
+                when 'not.or' then
+                    jsonb_build_object('operator', 'not', 'operands', jsonb_build_array(jsonb_build_object('operator', 'or', 'operands', omni_rest.postgrest_parse_logical (current))))
                 when 'not.and' then
                     jsonb_build_object('operator', 'not', 'operands', jsonb_build_array(jsonb_build_object('operator', 'and', 'operands', omni_rest.postgrest_parse_logical (current))))
                 when 'not' then

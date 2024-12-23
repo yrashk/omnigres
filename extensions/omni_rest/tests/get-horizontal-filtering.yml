@@ -429,3 +429,26 @@ tests:
     - content-type: application/json
     body: []
 
+- name: Logical operator nesting
+  query: |
+    with response as (select * from make_request('/users?order=id&or=(or(id.eq.1,id.eq.2),not.or(id.eq.1,name.imatch.doe))'))
+    select response.status,
+           (select json_agg(json_build_object(h.name, h.value))
+            from unnest(response.headers) h
+            where h.name not in ('server', 'content-length', 'connection')) as headers,
+           convert_from(response.body, 'utf-8')::json                       as body
+    from response
+  results:
+  - status: 200
+    headers:
+    - content-range: 0-2/*
+    - content-type: application/json
+    body:
+    - id: 1
+      name: John Doe
+      email: john@doe.com
+      profile_info: null
+    - id: 2
+      name: Jane Doe
+      email: jane@doe.com
+      profile_info: null
