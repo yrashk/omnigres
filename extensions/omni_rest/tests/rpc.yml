@@ -68,3 +68,11 @@ tests:
     headers:
     - content-type: application/json
     body: "pong"
+
+- name: No match when adding spurious parameters
+  query: |
+    with response as (select * from make_request('/rpc/ping?non_existing_parameter=true'))
+    select response.status
+    from response
+  results:
+  - status: 404

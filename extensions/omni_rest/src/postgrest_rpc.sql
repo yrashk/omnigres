@@ -2,7 +2,7 @@ create procedure postgrest_rpc (request omni_httpd.http_request, outcome inout o
 language plpgsql
 as $$
 declare
-    function_name regproc;
+    function_reference regproc;
     query text;
     namespace text;
     result jsonb;
@@ -15,8 +15,8 @@ begin
         if split_part(request.path, '/', 2) <> 'rpc' then
             return;
         end if;
-        call omni_rest._postgrest_function (request, function_name, namespace, settings);
-        if function_name is null then
+        call omni_rest._postgrest_function (request, function_reference, namespace, settings);
+        if function_reference is null then
             return;
             -- terminate
         end if;
@@ -24,7 +24,7 @@ begin
         return;
         -- terminate;
     end if;
-    query := format('select %1$s() as result', function_name);
+    query := format('select %1$s() as result', function_reference);
     -- Run it
     declare message text;
     detail text;
