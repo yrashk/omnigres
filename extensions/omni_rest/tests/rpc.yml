@@ -44,6 +44,10 @@ instance:
     create function app.ping() returns text language sql as $$ SELECT 'pong'; $$;
   - |
     create function app.two_parameters(a int, b text) returns text language sql as $$ SELECT format('int %1$L and text %2$L', a, b); $$;
+  - |
+    create function app.two_or_three_parameters(a int, b text) returns text language sql as $$ SELECT format('int %1$L and text %2$L and optional missing', a, b); $$;
+  - |
+    create function app.two_or_three_parameters(a int, b text, c text default 'three') returns text language sql as $$ SELECT format('int %1$L and text %2$L and optional %3$L', a, b, c); $$;
 
 tests:
 
@@ -92,3 +96,51 @@ tests:
     headers:
     - content-type: application/json
     body: "int '1' and text 'two'"
+
+- name: Two mandatory parameters and one optional missing when function is overloaded
+  query: |
+    with response as (select * from make_request('/rpc/two_or_three_parameters?a=1&b=two'))
+    select response.status,
+           (select json_agg(json_build_object(h.name, h.value))
+            from unnest(response.headers) h
+            where h.name in ('content-type')) as headers,
+           convert_from(response.body, 'utf-8')::json                       as body
+    from response
+  results:
+  - status: 400
+    headers:
+    - content-type: application/json
+    body:
+      hint: "Could not choose a best candidate function. You might need to add explicit type casts."
+      detail: ""
+      message: "function app.two_or_three_parameters(a => integer, b => text) is not unique"
+
+- name: Two mandatory parameters and one optional passed when function is overloaded
+  query: |
+    with response as (select * from make_request('/rpc/two_or_three_parameters?a=1&b=two&c=three'))
+    select response.status,
+           (select json_agg(json_build_object(h.name, h.value))
+            from unnest(response.headers) h
+            where h.name in ('content-type')) as headers,
+           convert_from(response.body, 'utf-8')::json                       as body
+    from response
+  results:
+  - status: 200
+    headers:
+    - content-type: application/json
+    body: "int '1' and text 'two' and optional 'three'"
+
+- name: Two mandatory parameters and one optional passed out of order when function is overloaded
+  query: |
+    with response as (select * from make_request('/rpc/two_or_three_parameters?b=two&a=1&c=three'))
+    select response.status,
+           (select json_agg(json_build_object(h.name, h.value))
+            from unnest(response.headers) h
+            where h.name in ('content-type')) as headers,
+           convert_from(response.body, 'utf-8')::json                       as body
+    from response
+  results:
+  - status: 200
+    headers:
+    - content-type: application/json
+    body: "int '1' and text 'two' and optional 'three'"

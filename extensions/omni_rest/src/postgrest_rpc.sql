@@ -3,7 +3,24 @@ create or replace function _postgrest_function_call_arguments (fn regproc, passe
     language sql
     as $$
     select
-        string_agg(format('%1$I => $%2$s :: %3$I', name, idx, t.typname), ', ')
+        string_agg(format('%1$I => $%2$s :: %3$I', name, idx, t.typname), ', ' order by idx)
+    from
+        pg_proc p,
+        unnest(proargnames, proargtypes, proargmodes)
+    with ordinality as _ (name, type, mode, idx)
+    join pg_type t on t.oid = type
+where
+    type is not null
+    and p.oid = fn
+    and name::text = any (passed_arguments)
+$$;
+
+create or replace function _postgrest_function_ordered_argument_values (fn regproc, passed_arguments text[], passed_values jsonb)
+    returns jsonb immutable
+    language sql
+    as $$
+    select
+        jsonb_agg(passed_values->>(name::text) order by idx)
     from
         pg_proc p,
         unnest(proargnames, proargtypes, proargmodes)
@@ -69,19 +86,20 @@ begin
         when 'GET' then
         (
             select
-                jsonb_agg(value::text)
+                jsonb_object_agg(keys.key, values.value)
             from
                 unnest(omni_web.parse_query_string (request.query_string))
-                with ordinality as _ (value, i)
-            where
-                i % 2 = 0)
+                with ordinality as keys (key, ikey)
+                join unnest(omni_web.parse_query_string (request.query_string))
+                with ordinality as
+            values (value,
+                ivalue) on ikey % 2 = 1
+                and ivalue % 2 = 0
+                and ikey = ivalue - 1)
         when 'POST' then
         (
             select
-                jsonb_agg(v)
-            from
-                jsonb_each_text(convert_from(request.body, 'utf-8')::jsonb) as _ (k,
-                    v))
+                convert_from(request.body, 'utf-8')::jsonb)
         end into argument_values;
     -- Run it
     declare message text;
@@ -89,7 +107,7 @@ begin
     hint text;
     begin
         select
-            omni_sql.execute (query, coalesce(argument_values, '[]'::jsonb)) -> 'result' into result;
+            omni_sql.execute (query, coalesce(omni_rest._postgrest_function_ordered_argument_values(function_reference, passed_arguments, argument_values), '[]'::jsonb )) -> 'result' into result;
         outcome := omni_httpd.http_response (result);
     exception
         when others then
