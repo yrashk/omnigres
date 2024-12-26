@@ -42,7 +42,8 @@ instance:
     $$
   - |
     create function app.ping() returns text language sql as $$ SELECT 'pong'; $$;
-    
+  - |
+    create function app.two_parameters(a int, b text) returns text language sql as $$ SELECT format('int %1$L and text %2$L', a, b); $$;
 
 tests:
 
@@ -76,3 +77,18 @@ tests:
     from response
   results:
   - status: 404
+
+- name: Two mandatory parameters
+  query: |
+    with response as (select * from make_request('/rpc/two_parameters?a=1&b=two'))
+    select response.status,
+           (select json_agg(json_build_object(h.name, h.value))
+            from unnest(response.headers) h
+            where h.name in ('content-type')) as headers,
+           convert_from(response.body, 'utf-8')::json                       as body
+    from response
+  results:
+  - status: 200
+    headers:
+    - content-type: application/json
+    body: "int '1' and text 'two'"
