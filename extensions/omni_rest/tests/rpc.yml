@@ -182,3 +182,10 @@ tests:
       detail: ""
       message: "cannot execute INSERT in a read-only transaction"
 
+- name: Try to execute function with side effects in a POST request
+  query: |
+    with response as (select * from make_request('/rpc/side_effect', method => 'POST', body => '{}'))
+    select response.status
+    from response
+  results:
+  - status: 200
