@@ -48,6 +48,10 @@ instance:
     create function app.two_or_three_parameters(a int, b text) returns text language sql as $$ SELECT format('int %1$L and text %2$L and optional missing', a, b); $$;
   - |
     create function app.two_or_three_parameters(a int, b text, c text default 'three') returns text language sql as $$ SELECT format('int %1$L and text %2$L and optional %3$L', a, b, c); $$;
+  - |
+    create table app.users (email text primary key, name text not null);
+  - |
+    create function app.side_effect() returns void language sql as $$ insert into app.users values (gen_random_uuid() || '@bar.com', 'foobar'); $$;
 
 tests:
 
@@ -159,3 +163,22 @@ tests:
     headers:
     - content-type: application/json
     body: "int '1' and text 'two' and optional 'three'"
+
+- name: Try to execute function with side effects in a GET request
+  query: |
+    with response as (select * from make_request('/rpc/side_effect'))
+    select response.status,
+           (select json_agg(json_build_object(h.name, h.value))
+            from unnest(response.headers) h
+            where h.name in ('content-type')) as headers,
+           convert_from(response.body, 'utf-8')::json                       as body
+    from response
+  results:
+  - status: 400
+    headers:
+    - content-type: application/json
+    body: 
+      hint: ""
+      detail: ""
+      message: "cannot execute INSERT in a read-only transaction"
+

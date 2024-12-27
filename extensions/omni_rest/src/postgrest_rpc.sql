@@ -20,7 +20,8 @@ create or replace function _postgrest_function_ordered_argument_values (fn regpr
     language sql
     as $$
     select
-        jsonb_agg(passed_values->>(name::text) order by idx)
+        jsonb_agg(passed_values ->> (name::text)
+        order by idx)
     from
         pg_proc p,
         unnest(proargnames, proargtypes, proargmodes)
@@ -80,42 +81,44 @@ begin
                 jsonb_object_keys(convert_from(request.body, 'utf-8')::jsonb))
         end into passed_arguments;
     arguments_definition := coalesce(omni_rest._postgrest_function_call_arguments (function_reference, passed_arguments), '');
-    query := format('select %1$s(%2$s) as result', function_reference, arguments_definition);
-    select
-        case request.method
-        when 'GET' then
-        (
-            select
-                jsonb_object_agg(keys.key, values.value)
-            from
-                unnest(omni_web.parse_query_string (request.query_string))
-                with ordinality as keys (key, ikey)
-                join unnest(omni_web.parse_query_string (request.query_string))
-                with ordinality as
-            values (value,
-                ivalue) on ikey % 2 = 1
-                and ivalue % 2 = 0
-                and ikey = ivalue - 1)
-        when 'POST' then
-        (
-            select
-                convert_from(request.body, 'utf-8')::jsonb)
-        end into argument_values;
-    -- Run it
-    declare message text;
-    detail text;
-    hint text;
-    begin
+    if request.method = 'GET' then
+        query := format('set transaction read only; select %1$s(%2$s) as result', function_reference, arguments_definition);
         select
-            omni_sql.execute (query, coalesce(omni_rest._postgrest_function_ordered_argument_values(function_reference, passed_arguments, argument_values), '[]'::jsonb )) -> 'result' into result;
-        outcome := omni_httpd.http_response (result);
-    exception
-        when others then
-            get stacked diagnostics message = message_text,
-            detail = pg_exception_detail,
-            hint = pg_exception_hint;
-    outcome := omni_httpd.http_response (jsonb_build_object('message', message, 'detail', detail, 'hint', hint), status => 400);
-    end;
+            (
+                select
+                    jsonb_object_agg(keys.key, values.value)
+                from
+                    unnest(omni_web.parse_query_string (request.query_string))
+                    with ordinality as keys (key, ikey)
+                    join unnest(omni_web.parse_query_string (request.query_string))
+                    with ordinality as
+                values (value,
+                    ivalue) on ikey % 2 = 1
+                    and ivalue % 2 = 0
+                    and ikey = ivalue - 1) into argument_values;
+    else
+        query := format('select %1$s(%2$s) as result', function_reference, arguments_definition);
+        select
+            (
+                select
+                    convert_from(request.body, 'utf-8')::jsonb)
+    end into argument_values;
+end if;
+        -- Run it
+        declare message text;
+        detail text;
+        hint text;
+        begin
+            select
+                omni_sql.execute (query, coalesce(omni_rest._postgrest_function_ordered_argument_values (function_reference, passed_arguments, argument_values), '[]'::jsonb)) -> 'result' into result;
+            outcome := omni_httpd.http_response (result);
+        exception
+            when others then
+                get stacked diagnostics message = message_text,
+                detail = pg_exception_detail,
+                hint = pg_exception_hint;
+            outcome := omni_httpd.http_response (jsonb_build_object('message', message, 'detail', detail, 'hint', hint), status => 400);
+        end;
 end;
 $$;
 
