@@ -31,15 +31,15 @@ instance:
     end;
     $$
   - |
-    create function make_request(path text, headers omni_http.http_headers default array []::omni_http.http_headers, method omni_http.http_method default 'GET') returns setof omni_httpc.http_response
+      create function make_request(path text, headers omni_http.http_headers default array []::omni_http.http_headers, method omni_http.http_method default 'GET', body jsonb default null::jsonb) returns setof omni_httpc.http_response
         language sql as
-    $$
-    select *
-    from omni_httpc.http_execute(
-            omni_httpc.http_request('http://127.0.0.1:' ||
-                                    (select effective_port from omni_httpd.listeners) ||
-                                    path, headers => headers, method => method))
-    $$
+      $$
+      select *
+      from omni_httpc.http_execute(
+              omni_httpc.http_request('http://127.0.0.1:' ||
+                                      (select effective_port from omni_httpd.listeners) ||
+      path, headers => headers, method => method, body => convert_to(body::text, 'utf8')))
+      $$
   - |
     create function app.ping() returns text language sql as $$ SELECT 'pong'; $$;
   - |
@@ -139,6 +139,21 @@ tests:
             where h.name in ('content-type')) as headers,
            convert_from(response.body, 'utf-8')::json                       as body
     from response
+  results:
+  - status: 200
+    headers:
+    - content-type: application/json
+    body: "int '1' and text 'two' and optional 'three'"
+
+- name: Two mandatory parameters and one optional in a POST request
+  query: |
+      with response as (select * from make_request('/rpc/two_or_three_parameters', method => 'POST', body => '{"b": "two", "a": 1, "c": "three"}'))
+      select response.status,
+             (select json_agg(json_build_object(h.name, h.value))
+              from unnest(response.headers) h
+              where h.name in ('content-type')) as headers,
+             convert_from(response.body, 'utf-8')::json                       as body
+      from response
   results:
   - status: 200
     headers:
