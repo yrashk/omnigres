@@ -49,7 +49,6 @@ begin
         return;
     end if;
     if request.method in ('GET', 'POST') then
-        -- FIXME: write guard clause checking for function
         if split_part(request.path, '/', 2) <> 'rpc' then
             return;
         end if;
