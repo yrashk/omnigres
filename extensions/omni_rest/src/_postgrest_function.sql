@@ -45,8 +45,7 @@ declare
 begin
     if request.method = 'GET' then
         namespace := omni_http.http_header_get (request.headers, 'accept-profile');
-    end if;
-    if request.method = 'POST' then
+    else
         namespace := omni_http.http_header_get (request.headers, 'content-profile');
     end if;
     if namespace is null and cardinality(settings.schemas) > 0 then
