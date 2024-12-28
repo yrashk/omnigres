@@ -52,6 +52,10 @@ instance:
     create table app.users (email text primary key, name text not null);
   - |
     create function app.side_effect() returns void language sql as $$ insert into app.users values (gen_random_uuid() || '@bar.com', 'foobar'); $$;
+  - |
+    create function app.return_composite() returns app.users language sql as $$ select * from (values ('john@doe.com', 'John Doe')); $$;
+  - |
+    create function app.srf() returns setof app.users language sql as $$ select * from (values ('jane@doe.com', 'Jane Doe'), ('john@doe.com', 'John Doe')); $$;
 
 tests:
 
@@ -189,3 +193,77 @@ tests:
     from response
   results:
   - status: 200
+
+- name: Return composite values from GET
+  query: |
+    with response as (select * from make_request('/rpc/return_composite'))
+    select response.status,
+           (select json_agg(json_build_object(h.name, h.value))
+            from unnest(response.headers) h
+            where h.name in ('content-type')) as headers,
+           convert_from(response.body, 'utf-8')::json                       as body
+    from response
+  results:
+  - status: 200
+    headers:
+    - content-type: application/json
+    body: 
+      name: "John Doe"
+      email: "john@doe.com"
+
+- name: Return composite values from POST
+  query: |
+    with response as (select * from make_request('/rpc/return_composite', method => 'POST', body => '{}'))
+    select response.status,
+           (select json_agg(json_build_object(h.name, h.value))
+            from unnest(response.headers) h
+            where h.name in ('content-type')) as headers,
+           convert_from(response.body, 'utf-8')::json                       as body
+    from response
+  results:
+  - status: 200
+    headers:
+    - content-type: application/json
+    body: 
+      name: "John Doe"
+      email: "john@doe.com"
+
+- name: Return set of values from GET
+  query: |
+    with response as (select * from make_request('/rpc/srf'))
+    select response.status,
+           (select json_agg(json_build_object(h.name, h.value))
+            from unnest(response.headers) h
+            where h.name in ('content-type', 'content-range')) as headers,
+           convert_from(response.body, 'utf-8')::json                       as body
+    from response
+  results:
+  - status: 200
+    headers:
+    - content-range: 0-2/*
+    - content-type: application/json
+    body:
+    - name: Jane Doe
+      email: jane@doe.com
+    - name: John Doe
+      email: john@doe.com
+
+- name: Return set of values from POST
+  query: |
+    with response as (select * from make_request('/rpc/srf', method => 'POST', body => '{}'))
+    select response.status,
+           (select json_agg(json_build_object(h.name, h.value))
+            from unnest(response.headers) h
+            where h.name in ('content-type', 'content-range')) as headers,
+           convert_from(response.body, 'utf-8')::json                       as body
+    from response
+  results:
+  - status: 200
+    headers:
+    - content-range: 0-2/*
+    - content-type: application/json
+    body:
+    - name: Jane Doe
+      email: jane@doe.com
+    - name: John Doe
+      email: john@doe.com

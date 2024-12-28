@@ -81,8 +81,13 @@ begin
                 jsonb_object_keys(convert_from(request.body, 'utf-8')::jsonb))
         end into passed_arguments;
     arguments_definition := coalesce(omni_rest._postgrest_function_call_arguments (function_reference, passed_arguments), '');
+    if (select proretset from pg_proc where oid = function_reference) then
+        query := format('select jsonb_agg(row_to_json(r.*)::jsonb) as result from %1$s(%2$s) r', function_reference, arguments_definition);
+    else
+        query := format('select %1$s(%2$s) as result', function_reference, arguments_definition);
+    end if;
     if request.method = 'GET' then
-        query := format('set transaction read only; select %1$s(%2$s) as result', function_reference, arguments_definition);
+        query := format('set transaction read only; %1$s', query);
         select
             (
                 select
@@ -97,7 +102,6 @@ begin
                     and ivalue % 2 = 0
                     and ikey = ivalue - 1) into argument_values;
     else
-        query := format('select %1$s(%2$s) as result', function_reference, arguments_definition);
         select
             (
                 select
@@ -111,7 +115,11 @@ end if;
         begin
             select
                 omni_sql.execute (query, coalesce(omni_rest._postgrest_function_ordered_argument_values (function_reference, passed_arguments, argument_values), '[]'::jsonb)) -> 'result' into result;
-            outcome := omni_httpd.http_response (result);
+            if jsonb_typeof(result) = 'array' then
+              outcome := omni_httpd.http_response (result, headers => array[omni_http.http_header ('Content-Range', '0-' || jsonb_array_length(result) || '/*')]);
+            else
+              outcome := omni_httpd.http_response (result);
+            end if;
         exception
             when others then
                 get stacked diagnostics message = message_text,
