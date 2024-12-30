@@ -141,7 +141,7 @@ select
                 when first_operator = 'not' then
                     jsonb_build_object('operator', 'not', 'operands', jsonb_build_array(jsonb_build_object('operator', second_operator, 'operands', jsonb_build_array(key, split_part(value, '.', 3)))))
                 when first_operator is not null then
-                    jsonb_build_object('operator', first_operator, 'operands', jsonb_build_array(key, split_part(value, '.', 2)))
+                    jsonb_build_object('operator', first_operator, 'operands', jsonb_build_array(key, (regexp_match(value, '\.(.*)'))[1]))
                 else
                     jsonb_build_object('operator', 'invalid_operator', 'operands', '[]'::jsonb)
                 end), '[]'::jsonb))
