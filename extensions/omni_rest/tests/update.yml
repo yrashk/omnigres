@@ -64,6 +64,7 @@ tests:
 - name: simple update
   transaction: false
   steps:
+  - query: truncate app.users
   - query: insert into app.users values (default, 'John Doe', 'john@doe.com', '{}');
   - query: |
       with response as (select *
@@ -87,14 +88,12 @@ tests:
     - name: New Name
       email: new@email.com
       profile_info: {}
-  - name: cleanup
-    query: delete
-           from app.users
 
 - name: Update multiple rows without filters
   transaction: false
   steps:
-  - query: insert into app.users values ('1', 'John Doe', 'john@doe.com', '{}'), ('2', 'Jane Doe', 'jane@doe.com', '{}');
+  - query: truncate app.users
+  - query: insert into app.users values (default, 'John Doe', 'john@doe.com', '{}'), (default, 'Jane Doe', 'jane@doe.com', '{}');
   - query: |
       with response as (select *
                         from make_request('/users', method => 'PATCH',
@@ -111,29 +110,25 @@ tests:
       from response
     results:
     - status: 201
-  - query: select id, name, email, profile_info
+  - query: select name, email, profile_info
            from app.users
            order by id
     results:
-    - id: 1
-      name: New Name
+    - name: New Name
       email: new@email.com
       profile_info: {}
-    - id: 2 
-      name: New Name
+    - name: New Name
       email: new@email.com
       profile_info: {}
-  - name: cleanup
-    query: delete
-           from app.users
 
 - name: Update with filter
   transaction: false
   steps:
-  - query: insert into app.users values ('1', 'John Doe', 'john@doe.com', '{}'), ('2', 'Jane Doe', 'jane@doe.com', '{}');
+  - query: truncate app.users
+  - query: insert into app.users values (default, 'John Doe', 'john@doe.com', '{}'), (default, 'Jane Doe', 'jane@doe.com', '{}');
   - query: |
       with response as (select *
-                        from make_request('/users?id=eq.1', method => 'PATCH',
+                        from make_request('/users?name=eq.John+Doe', method => 'PATCH',
                                           headers =>
                                               array [omni_http.http_header('content-type', 'application/json')],
                                           body =>
@@ -147,24 +142,20 @@ tests:
       from response
     results:
     - status: 201
-  - query: select id, name, email, profile_info
+  - query: select name, email, profile_info
            from app.users order by id
     results:
-    - id: 1
-      name: New Name
+    - name: New Name
       email: new@email.com
       profile_info: {}
-    - id: 2 
-      name: Jane Doe
+    - name: Jane Doe
       email: jane@doe.com
       profile_info: {}
-  - name: cleanup
-    query: delete
-           from app.users
 
 - name: return representation
   transaction: false
   steps:
+  - query: truncate app.users
   - query: insert into app.users values ('1', 'John Doe', 'john@doe.com', '{}');
   - query: |
       with response as (select *
@@ -192,13 +183,11 @@ tests:
         name: New Name
         email: new@email.com
         profile_info: {}
-  - name: cleanup
-    query: delete from app.users
-
 - name: tx-end rollback
   transaction: false
   steps:
-  - query: insert into app.users values ('1', 'John Doe', 'john@doe.com', '{}');
+  - query: truncate app.users
+  - query: insert into app.users values (default, 'John Doe', 'john@doe.com', '{}');
   - query: |
       with response as (select *
                         from make_request('/users', method => 'PATCH',
@@ -222,13 +211,12 @@ tests:
            from app.users
             where name = 'New Name'
     results: [ ]
-  - name: cleanup
-    query: delete from app.users
 
-- name: JSON insert into an invalid schema (using headers)
+- name: JSON update table on an invalid schema (using headers)
   transaction: false
   steps:
-  - query: insert into app.users values ('1', 'John Doe', 'john@doe.com', '{}');
+  - query: truncate app.users
+  - query: insert into app.users values (default, 'John Doe', 'john@doe.com', '{}');
   - query: |
       with response as (select *
                         from make_request('/users', method => 'PATCH',
@@ -252,6 +240,4 @@ tests:
            from app.users
             where name = 'New Name'
     results: [ ]
-  - name: cleanup
-    query: delete from app.users
 
