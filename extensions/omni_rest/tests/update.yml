@@ -225,3 +225,33 @@ tests:
   - name: cleanup
     query: delete from app.users
 
+- name: JSON insert into an invalid schema (using headers)
+  transaction: false
+  steps:
+  - query: insert into app.users values ('1', 'John Doe', 'john@doe.com', '{}');
+  - query: |
+      with response as (select *
+                        from make_request('/users', method => 'PATCH',
+                                          headers =>
+                                              array [
+                                                  omni_http.http_header('content-type', 'application/json'),
+                                                  omni_http.http_header('content-profile', 'public')
+                                          ],
+                                          body =>
+                                                      jsonb_build_object('name',
+                                                                         'New Name',
+                                                                         'email',
+                                                                         'new@email.com'
+                                                                         )::text
+                                                      ))
+      select response.status
+      from response
+    results:
+    - status: 404
+  - query: select name
+           from app.users
+            where name = 'New Name'
+    results: [ ]
+  - name: cleanup
+    query: delete from app.users
+
