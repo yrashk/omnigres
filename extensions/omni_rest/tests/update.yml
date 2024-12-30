@@ -61,7 +61,7 @@ instance:
 
 tests:
 
-- name: simple JSON update
+- name: simple update
   transaction: false
   steps:
   - query: insert into app.users values (default, 'John Doe', 'john@doe.com', '{}');
@@ -161,3 +161,37 @@ tests:
   - name: cleanup
     query: delete
            from app.users
+
+- name: return representation
+  transaction: false
+  steps:
+  - query: insert into app.users values ('1', 'John Doe', 'john@doe.com', '{}');
+  - query: |
+      with response as (select *
+                        from make_request('/users', method => 'PATCH',
+                                          headers =>
+                                              array [
+                                                  omni_http.http_header('content-type', 'application/json'),
+                                                  omni_http.http_header('prefer', 'return=representation')
+                                          ],
+                                          body =>
+                                                      jsonb_build_object('name',
+                                                                         'New Name',
+                                                                         'email',
+                                                                         'new@email.com'
+                                                                         )::text
+                                                      ))
+      select 
+          response.status,
+          convert_from(response.body, 'utf8')::jsonb as body
+      from response
+    results:
+    - status: 201
+      body:
+      - id: 1
+        name: New Name
+        email: new@email.com
+        profile_info: {}
+  - name: cleanup
+    query: delete from app.users
+
