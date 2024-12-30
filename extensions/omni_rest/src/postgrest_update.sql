@@ -100,8 +100,10 @@ begin
     end loop;
     declare
         update_fields_definition text;
-        field_values    jsonb;
-        field_names   text[];
+        field_values             jsonb;
+        field_names              text[];
+        params                   text[];
+        _where                   text;
     begin
         select 
             array_agg(jsonb_object_keys)
@@ -111,9 +113,11 @@ begin
         update_fields_definition :=
             coalesce(omni_rest._postgrest_update_fields(relation, field_names), '');
         field_values := omni_rest._postgrest_update_ordered_field_values(field_names, payload);
+        params := omni_web.parse_query_string(request.query_string);
+        _where := omni_rest.postgrest_format_get_param(omni_rest.postgrest_parse_get_param(params));
 
         query := 
-            format('update %1$I.%2$I set %3$s %4$s', 
+            format('update %1$I.%2$I set %3$s where %4$s %5$s', 
                 namespace, 
                 (select
                     relname
@@ -121,12 +125,14 @@ begin
                 where
                     oid = relation), 
                 update_fields_definition,
+                coalesce(_where, 'true'),
                 case when _return = 'representation' then
                     'returning *'
                 else
                     ''
                 end
             );
+
         select
             jsonb_agg(stmt_row)
         from

@@ -67,7 +67,7 @@ tests:
   - query: insert into app.users values (default, 'John Doe', 'john@doe.com', '{}');
   - query: |
       with response as (select *
-                        from make_request('/users?email=john@doe.com', method => 'PATCH',
+                        from make_request('/users', method => 'PATCH',
                                           headers =>
                                               array [omni_http.http_header('content-type', 'application/json')],
                                           body =>
@@ -127,3 +127,37 @@ tests:
     query: delete
            from app.users
 
+- name: Update with filter
+  transaction: false
+  steps:
+  - query: insert into app.users values ('1', 'John Doe', 'john@doe.com', '{}'), ('2', 'Jane Doe', 'jane@doe.com', '{}');
+  - query: |
+      with response as (select *
+                        from make_request('/users?id=eq.1', method => 'PATCH',
+                                          headers =>
+                                              array [omni_http.http_header('content-type', 'application/json')],
+                                          body =>
+                                                      jsonb_build_object('name',
+                                                                         'New Name',
+                                                                         'email',
+                                                                         'new@email.com'
+                                                                         )::text
+                                                      ))
+      select response.status
+      from response
+    results:
+    - status: 201
+  - query: select id, name, email, profile_info
+           from app.users order by id
+    results:
+    - id: 1
+      name: New Name
+      email: new@email.com
+      profile_info: {}
+    - id: 2 
+      name: Jane Doe
+      email: jane@doe.com
+      profile_info: {}
+  - name: cleanup
+    query: delete
+           from app.users
