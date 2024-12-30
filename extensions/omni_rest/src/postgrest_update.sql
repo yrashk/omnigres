@@ -4,7 +4,7 @@
  * The placeholders are in the order of the relation definition.
  * This can be used with _postgrest_update_ordered_field_values to build a SQL command that will update the referenced relation.
  */ 
-create or replace function _postgrest_update_fields(relation regclass, passed_arguments text[])
+create or replace function _postgrest_update_fields(relation regclass, field_names text[])
     returns text
     immutable
     language sql
@@ -15,20 +15,20 @@ select
 from 
     pg_attribute a
     join pg_type t on a.atttypid = t.oid
-    join unnest(passed_arguments) with ordinality as pa (name, idx) on pa.name = a.attname
+    join unnest(field_names) with ordinality as pa (name, idx) on pa.name = a.attname
 where 
     a.attrelid = relation
-    and a.attname = any (passed_arguments)
+    and a.attname = any (field_names)
     and a.attnum > 0
     and not a.attisdropped;
 $$;
 
 /*
  * Given an array of argument names and a jsonb object in the shape of {[argument_name]:argument_value},
- * it returns a jsonb array with the argument values in the same order as the array inn passed_arguments.
+ * it returns a jsonb array with the argument values in the same order as the array inn field_names.
  * This can be used with postgrest_update_fields to build a SQL update command
  */ 
-create or replace function _postgrest_update_ordered_field_values(passed_arguments text[], passed_values jsonb)
+create or replace function _postgrest_update_ordered_field_values(field_names text[], passed_values jsonb)
     returns jsonb
     immutable
     language sql
@@ -37,7 +37,7 @@ $$
 select 
     jsonb_agg(passed_values ->> (name::text) order by idx)
 from 
-     unnest(passed_arguments) with ordinality as _ (name, idx);
+     unnest(field_names) with ordinality as _ (name, idx);
 $$;
 
 
@@ -99,18 +99,18 @@ begin
         end;
     end loop;
     declare
-        arguments_definition text;
-        argument_values    jsonb;
-        passed_arguments   text[];
+        update_fields_definition text;
+        field_values    jsonb;
+        field_names   text[];
     begin
         select 
             array_agg(jsonb_object_keys)
         from
             jsonb_object_keys(payload)
-        into passed_arguments;
-        arguments_definition :=
-            coalesce(omni_rest._postgrest_update_fields(relation, passed_arguments), '');
-        argument_values := omni_rest._postgrest_update_ordered_field_values(passed_arguments, payload);
+        into field_names;
+        update_fields_definition :=
+            coalesce(omni_rest._postgrest_update_fields(relation, field_names), '');
+        field_values := omni_rest._postgrest_update_ordered_field_values(field_names, payload);
 
         query := 
             format('update %1$I.%2$I set %3$s %4$s', 
@@ -120,7 +120,7 @@ begin
                 from pg_class
                 where
                     oid = relation), 
-                arguments_definition,
+                update_fields_definition,
                 case when _return = 'representation' then
                     'returning *'
                 else
@@ -130,7 +130,7 @@ begin
         select
             jsonb_agg(stmt_row)
         from
-            omni_sql.execute (query, coalesce(argument_values, '[]'::jsonb))
+            omni_sql.execute (query, coalesce(field_values, '[]'::jsonb))
         into result;
         if lower(_tx) = 'rollback' then
             rollback and chain;
