@@ -241,3 +241,32 @@ tests:
             where name = 'New Name'
     results: [ ]
 
+- name: vertical filtering
+  transaction: false
+  steps:
+  - query: truncate app.users
+  - query: insert into app.users values ('1', 'John Doe', 'john@doe.com', '{}');
+  - query: |
+      with response as (select *
+                        from make_request('/users?select=name', method => 'PATCH',
+                                          headers =>
+                                              array [
+                                                  omni_http.http_header('content-type', 'application/json'),
+                                                  omni_http.http_header('prefer', 'return=representation')
+                                          ],
+                                          body =>
+                                                      jsonb_build_object('name',
+                                                                         'New Name',
+                                                                         'email',
+                                                                         'new@email.com'
+                                                                         )::text
+                                                      ))
+      select 
+          response.status,
+          convert_from(response.body, 'utf8')::jsonb as body
+      from response
+    results:
+    - status: 201
+      body:
+      - name: New Name
+

@@ -104,6 +104,8 @@ begin
         field_names              text[];
         params                   text[];
         _where                   text;
+        _select   text;
+        query_columns   text[];
     begin
         select 
             array_agg(jsonb_object_keys)
@@ -115,6 +117,9 @@ begin
         field_values := omni_rest._postgrest_update_ordered_field_values(field_names, payload);
         params := omni_web.parse_query_string(request.query_string);
         _where := omni_rest.postgrest_format_get_param(omni_rest.postgrest_parse_get_param(params));
+        -- Columns (vertical filtering)
+        _select = omni_web.param_get(params, 'select');
+        query_columns := omni_rest.postgrest_select_columns(namespace, relation, _select);
 
         query := 
             format('update %1$I.%2$I set %3$s where %4$s %5$s', 
@@ -127,7 +132,7 @@ begin
                 update_fields_definition,
                 coalesce(_where, 'true'),
                 case when _return = 'representation' then
-                    'returning *'
+                    format('returning %1$s', concat_ws(', ', variadic query_columns))
                 else
                     ''
                 end
