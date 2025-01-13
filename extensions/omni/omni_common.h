@@ -200,6 +200,8 @@ MODULE_FUNCTION void omni_process_utility_hook(PlannedStmt *pstmt, const char *q
 MODULE_FUNCTION void omni_xact_callback_hook(XactEvent event, void *arg);
 MODULE_FUNCTION void omni_emit_log_hook(ErrorData *edata);
 
+MODULE_FUNCTION void omni_object_access_hook(ObjectAccessType access, Oid classId, Oid objectId, int subId, void *arg);
+
 DECLARE_MODULE_VARIABLE(void *saved_hooks[__OMNI_HOOK_TYPE_COUNT]);
 
 DECLARE_MODULE_VARIABLE(hook_entry_points_t hook_entry_points);
@@ -235,6 +237,8 @@ MODULE_FUNCTION void default_process_utility(omni_hook_handle *handle, PlannedSt
                                              ProcessUtilityContext context, ParamListInfo params,
                                              QueryEnvironment *queryEnv, DestReceiver *dest,
                                              QueryCompletion *qc);
+
+MODULE_FUNCTION void default_object_access(omni_hook_handle *handle, ObjectAccessType access, Oid classId, Oid objectId, int subId, void *arg);
 
 DECLARE_MODULE_VARIABLE(bool backend_force_reload);
 

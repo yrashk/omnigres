@@ -97,6 +97,12 @@ MODULE_FUNCTION void default_process_utility(omni_hook_handle *handle, PlannedSt
                    context, params, queryEnv, dest, qc);
 }
 
+MODULE_FUNCTION void default_object_access(omni_hook_handle *handle, ObjectAccessType access, Oid classId, Oid objectId, int subId, void *arg) {
+  if (saved_hooks[omni_hook_object_access] != NULL) {
+    ((object_access_hook_type)saved_hooks[omni_hook_object_access])(access, classId, objectId, subId, arg);
+  }
+}
+
 MODULE_FUNCTION void reorganize_hooks() {
   // Remove hooks that are no longer loaded
   for (int type = 0; type < __OMNI_HOOK_TYPE_COUNT; type++) {
@@ -184,6 +190,13 @@ MODULE_FUNCTION void omni_executor_run_hook(QueryDesc *queryDesc, ScanDirection 
 MODULE_FUNCTION void omni_executor_finish_hook(QueryDesc *queryDesc) {
   iterate_hooks(executor_finish, queryDesc);
 }
+
+MODULE_FUNCTION void omni_object_access_hook(ObjectAccessType access, Oid classId, Oid objectId, int subId, void *arg) {
+  load_pending_modules();
+
+  iterate_hooks(object_access, access, classId, objectId, subId, arg);
+}
+
 
 MODULE_FUNCTION void omni_executor_end_hook(QueryDesc *queryDesc) {
   iterate_hooks(executor_end, queryDesc);

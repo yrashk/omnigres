@@ -88,6 +88,7 @@ void _PG_init() {
   save_hook(process_utility, ProcessUtility_hook);
   save_hook(emit_log, emit_log_hook);
   save_hook(check_password, check_password_hook);
+  save_hook(object_access, object_access_hook);
 #undef save_hook
 
   RegisterXactCallback(omni_xact_callback_hook, NULL);
@@ -107,6 +108,9 @@ void _PG_init() {
                                                           ? default_check_password_hook
                                                           : NULL},
       [omni_hook_xact_callback] = {.xact_callback = NULL},
+      [omni_hook_object_access] = {
+        .object_access = saved_hooks[omni_hook_object_access] ? default_object_access : NULL
+      },
       NULL};
 
   {

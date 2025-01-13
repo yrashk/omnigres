@@ -18,6 +18,7 @@
 #include <tcop/utility.h>
 #include <utils/guc.h>
 #include <utils/guc_tables.h>
+#include <catalog/objectaccess.h>
 
 #if PG_MAJORVERSION_NUM >= 13 && PG_MAJORVERSION_NUM <= 17
 /**
@@ -218,6 +219,8 @@ typedef void (*omni_hook_process_utility_t)(omni_hook_handle *handle, PlannedStm
                                             QueryCompletion *qc);
 typedef void (*omni_hook_xact_callback_t)(omni_hook_handle *handle, XactEvent event);
 typedef void (*omni_hook_subxact_callback_t)(omni_hook_handle *handle, SubXactEvent event);
+typedef void (*omni_hook_object_access_t)(omni_hook_handle *handle, ObjectAccessType access,
+                                          Oid classId, Oid objectId, int subId, void *arg);
 
 typedef union {
   omni_hook_emit_log_t emit_log;
@@ -231,6 +234,7 @@ typedef union {
   omni_hook_process_utility_t process_utility;
   omni_hook_xact_callback_t xact_callback;
   omni_hook_subxact_callback_t subxact_callback;
+  omni_hook_object_access_t object_access;
   void *ptr;
 } omni_hook_fn;
 
