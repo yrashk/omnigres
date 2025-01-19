@@ -1,0 +1,88 @@
+create extension if not exists omni_mimetypes cascade;
+
+create function docs_fs() returns omni_vfs.local_fs
+    language sql as
+$$
+select omni_vfs.local_fs('/omni-docs')
+$$;
+
+create
+    or
+    replace procedure static_file_handler(request omni_httpd.http_request, outcome inout omni_httpd.http_outcome,
+                                          fs anyelement)
+    language plpgsql as
+$$
+begin
+    --- File
+    if request.method = 'GET' and
+       (omni_vfs.file_info(fs, request.path)).kind = 'file' then
+        select
+            omni_httpd.http_response(
+                    omni_vfs.read(fs, request.path),
+                    headers => array [omni_http.http_header('content-type',
+                                                            coalesce(mime_types.name, 'application/octet-stream'))]::omni_http.http_header[])
+        from
+                (select)                                            _
+                left join omni_mimetypes.file_extensions on request.path like '%%.' || file_extensions.extension
+                left join omni_mimetypes.mime_types_file_extensions mtfe on mtfe.file_extension_id = file_extensions.id
+                left join omni_mimetypes.mime_types on mtfe.mime_type_id = mime_types.id
+        into outcome;
+    end if;
+
+    if outcome is not null then
+        return;
+    end if;
+
+    --- Directory
+    if request.method = 'GET' and
+       (omni_vfs.file_info(fs, request.path)).kind = 'dir' and
+       (omni_vfs.file_info(fs, request.path || '/index.html')).kind = 'file' then
+        select
+            omni_httpd.http_response(
+                    omni_vfs.read(fs, request.path || '/index.html'),
+                    headers => array [omni_http.http_header('content-type', 'text/html')]::omni_http.http_header[])
+        into outcome;
+    end if;
+
+    if outcome is not null then
+        return;
+    end if;
+
+    --- File listing
+
+    if request.method = 'GET' and
+       (omni_vfs.file_info(fs, request.path)).kind = 'dir' and
+       (omni_vfs.file_info(fs, request.path || '/index.html')) is not distinct from null then
+        select
+            omni_httpd.http_response(
+                    (select
+                         string_agg('<a href="' || case when request.path = '/' then '/' else request.path || '/' end ||
+                                    name ||
+                                    '">' || name || '</a>', '<br>')
+                     from
+                         omni_vfs.list(fs, request.path)),
+                    headers => array [omni_http.http_header('content-type', 'text/html')]::omni_http.http_header[])
+
+        into outcome;
+    end if;
+end;
+$$;
+
+create or replace procedure omni_httpd.handler(int, omni_httpd.http_request, inout omni_httpd.http_outcome)
+    language plpgsql as
+$$
+declare
+    outcome      omni_httpd.http_outcome;
+    docs_request omni_httpd.http_request := $2;
+begin
+    if docs_request.path like '/docs%' then
+        docs_request.path := regexp_replace(docs_request.path, '^/docs(/.*|)$', '/', '');
+    end if;
+    call
+        static_file_handler(docs_request, outcome, docs_fs());
+    if outcome is not distinct from null then
+        outcome := omni_httpd.http_response(status => 404);
+    end if;
+    $3 := outcome;
+end;
+$$;
