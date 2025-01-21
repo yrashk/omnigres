@@ -30,6 +30,7 @@
 
 #include <access/xact.h>
 #include <catalog/namespace.h>
+#include <catalog/pg_proc.h>
 #include <catalog/pg_authid.h>
 #include <executor/spi.h>
 #include <funcapi.h>
@@ -63,6 +64,7 @@
 #include "fd.h"
 #include "http_worker.h"
 #include "omni_httpd.h"
+
 
 #if H2O_USE_LIBUV == 1
 #error "only evloop is supported, ensure H2O_USE_LIBUV is not set to 1"
@@ -177,6 +179,35 @@ static void sigterm() {
                                                                                                : 1;
   h2o_multithread_send_message(&event_loop_receiver, NULL);
   h2o_multithread_send_message(&handler_receiver, NULL);
+}
+
+Oid previous_user;
+int previous_ctx;
+Oid transaction_user = InvalidOid;
+int transaction_ctx;
+
+void xcb(XactEvent event, void *arg) {
+  if (event == XACT_EVENT_COMMIT) {
+    SetUserIdAndSecContext(previous_user, previous_ctx);
+  }
+}
+ExecutorStart_hook_type old_executor_hook;
+
+void xes(QueryDesc *queryDesc, int eflags) {
+  static bool entered = false;
+  if (!entered) {
+    entered = true;
+    if (transaction_user != InvalidOid) {
+      ereport(LOG, errmsg("restore user id ctx %d %d", transaction_user, transaction_ctx));
+      SetUserIdAndSecContext(transaction_user, transaction_ctx);
+    }
+    if (old_executor_hook) {
+      old_executor_hook(queryDesc, eflags);
+    } else {
+      standard_ExecutorStart(queryDesc, eflags);
+    }
+    entered = false;
+  }
 }
 
 /**
@@ -347,6 +378,9 @@ void http_worker(Datum db_oid) {
 
   HandlerContext =
       AllocSetContextCreate(TopMemoryContext, "omni_httpd handler context", ALLOCSET_DEFAULT_SIZES);
+
+  RegisterXactCallback(xcb, NULL);
+  old_executor_hook = ExecutorStart_hook;
 
   while (atomic_load(&worker_running)) {
     bool worker_reload_test = true;
@@ -872,12 +906,27 @@ static int handler(handler_message_t *msg) {
 
     Datum outcome;
     bool isnull = false;
+
+    GetUserIdAndSecContext(&previous_user, &previous_ctx);
+
+    old_executor_hook = ExecutorStart_hook;
+    ExecutorStart_hook = xes;
     PG_TRY();
     {
       FmgrInfo flinfo;
 
       Oid function = is_websocket_upgrade ? websocket_handler_oid : handler_oid;
       fmgr_info(function, &flinfo);
+
+      {
+        HeapTuple tuple = SearchSysCache1(PROCOID, ObjectIdGetDatum(handler_oid));
+        Assert(HeapTupleIsValid(tuple));
+        Form_pg_proc proc = (Form_pg_proc) GETSTRUCT(tuple);
+        GetUserIdAndSecContext(&transaction_user, &transaction_ctx);
+        transaction_user = proc->proowner;
+        transaction_ctx |= SECURITY_LOCAL_USERID_CHANGE;
+        ReleaseSysCache(tuple);
+      }
 
       Snapshot snapshot = GetTransactionSnapshot();
       PushActiveSnapshot(snapshot);
@@ -933,6 +982,8 @@ static int handler(handler_message_t *msg) {
       goto cleanup;
     }
     PG_END_TRY();
+    ExecutorStart_hook = old_executor_hook;
+
     switch (msg->type) {
     case handler_message_http: {
       if (is_websocket_upgrade) {
