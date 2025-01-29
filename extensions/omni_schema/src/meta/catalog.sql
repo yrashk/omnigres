@@ -77,7 +77,7 @@ create or replace function get_typedef_composite(oid) returns text
   begin
     select into defn
            format('CREATE TYPE %s AS (%s)',
-                  $1::regtype,
+                  format_type($1::regtype, null),
                   string_agg(coldef, ', ' order by attnum))
       from (select a.attnum,
                    format('%I %s%s',
@@ -96,7 +96,7 @@ create or replace function get_typedef_composite(oid) returns text
                and not a.attisdropped) s;
     return defn;
   end;
-  $$;
+$$ set search_path = '';
 
 create or replace function get_typedef_enum(oid) returns text
   language plpgsql
@@ -106,28 +106,20 @@ create or replace function get_typedef_enum(oid) returns text
   begin
     select into defn
            format('CREATE TYPE %s AS ENUM (%s)',
-                  $1::regtype,
+                  format_type($1::regtype, null),
                   string_agg(quote_literal(enumlabel), ', '
                              order by enumsortorder))
       from pg_enum
      where enumtypid = $1;
     return defn;
   end;
-  $$;
+$$ set search_path = '';
 
 
 create or replace view type as
-select
-    type_id(n.nspname, pg_catalog.format_type(t.oid, NULL)) as id,
-    t.typtype as "type",
+select type_id(n.nspname, t.typname::text) as id,
     n.nspname::text as schema_name,
-    t.typname as name,
-    case when c.relkind = 'c' then true else false end as composite,
-    case when t.typtype = 'c' then get_typedef_composite(t.oid)
-         when t.typtype = 'e' then get_typedef_enum(t.oid)
-         else 'UNSUPPORTED'
-    end as definition,
-    pg_catalog.obj_description(t.oid, 'pg_type') as description
+       t.typname                           as name
 from pg_catalog.pg_type t
      left join pg_catalog.pg_namespace n on n.oid = t.typnamespace
      left join pg_catalog.pg_class c on c.oid = t.typrelid
@@ -137,6 +129,63 @@ where (t.typrelid = 0 or c.relkind = 'c')
     AND n.nspname <> 'pg_catalog'
     AND n.nspname <> 'information_schema'
 ;
+
+
+create or replace view type_basic as
+select type_id(n.nspname, t.typname::text) as id
+from pg_catalog.pg_type t
+         left join pg_catalog.pg_namespace n on n.oid = t.typnamespace
+where typtype = 'b';
+
+create or replace view type_composite as
+select type_id(n.nspname, t.typname::text) as id,
+       get_typedef_composite(t.oid)        as definition
+from pg_catalog.pg_type t
+         left join pg_catalog.pg_namespace n on n.oid = t.typnamespace
+where typtype = 'c';
+
+create or replace view type_domain as
+select type_id(n.nspname, t.typname::text)   as id,
+       type_id(n1.nspname, t1.typname::text) as base_type_id
+from pg_catalog.pg_type t
+         left join pg_catalog.pg_namespace n on n.oid = t.typnamespace
+         inner join pg_catalog.pg_type t1 on t1.oid = t.typbasetype
+         left join pg_catalog.pg_namespace n1 on n1.oid = t1.typnamespace
+where t.typtype = 'd';
+
+create or replace view type_enum as
+select type_id(n.nspname, t.typname::text) as id
+from pg_catalog.pg_type t
+         left join pg_catalog.pg_namespace n on n.oid = t.typnamespace
+where typtype = 'e';
+
+create or replace view type_enum_label as
+select type_id(n.nspname, t.typname::text) as id,
+       enumlabel                           as label,
+       enumsortorder                       as sortorder
+from pg_catalog.pg_type t
+         left join pg_catalog.pg_namespace n on n.oid = t.typnamespace
+         inner join pg_enum e on e.enumtypid = t.oid
+where typtype = 'e';
+
+
+create or replace view type_pseudo as
+select type_id(n.nspname, t.typname::text) as id
+from pg_catalog.pg_type t
+         left join pg_catalog.pg_namespace n on n.oid = t.typnamespace
+where typtype = 'p';
+
+create or replace view type_range as
+select type_id(n.nspname, t.typname::text) as id
+from pg_catalog.pg_type t
+         left join pg_catalog.pg_namespace n on n.oid = t.typnamespace
+where typtype = 'r';
+
+create or replace view type_multirange as
+select type_id(n.nspname, t.typname::text) as id
+from pg_catalog.pg_type t
+         left join pg_catalog.pg_namespace n on n.oid = t.typnamespace
+where typtype = 'm';
 
 
 
