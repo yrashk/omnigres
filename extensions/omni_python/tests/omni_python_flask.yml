@@ -11,11 +11,11 @@ instance:
         omni_python.config (name, value)
     values
         ('pip_find_links', '../../../python-wheels'),
-        ('site_packages', 'omni_python_test_functions')
+        ('site_packages', 'omni_python_test_flask')
   - query: select omni_python.install_requirements($1)
     params:
     - |
-      omni_python
+      omni_python==0.2.0
       omni_http[Flask]
   - query: select omni_python.create_functions($1)
     params:

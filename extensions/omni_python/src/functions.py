@@ -116,7 +116,9 @@ for name, value in code_locals.items():
         pg_functions.append((name, value, value.__pg_stored_procedure__))
 
 __types__ = {str: 'text', bool: 'boolean', bytes: 'bytea', int: 'int',
-             decimal.Decimal: 'numeric', float: 'double precision'}
+             decimal.Decimal: 'numeric', float: 'double precision',
+             omni_python.types.json: 'json'
+             }
 
 
 def resolve_type(function, arg):

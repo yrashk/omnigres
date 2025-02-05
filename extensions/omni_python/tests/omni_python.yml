@@ -8,7 +8,7 @@ instance:
     values
         ('pip_find_links', '../../../python-wheels'),
         ('site_packages', 'omni_python_test_functions')
-  - select omni_python.install_requirements('omni_python')
+  - select omni_python.install_requirements('omni_python==0.2.0')
 
 tests:
 
@@ -16,7 +16,7 @@ tests:
   query: select * from omni_python.installed_package
   results:
   - name: omni_python
-    version: 0.1.0
+    version: 0.2.0
 
 - name: error
   steps:

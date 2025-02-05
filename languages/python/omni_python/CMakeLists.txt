@@ -5,7 +5,7 @@ include(../PythonPackage.cmake)
 
 add_python_package(py_omni_python
         PACKAGE_NAME omni_python
-        VERSION 0.1.0
+        VERSION 0.2.0
         SOURCES
         src/omni_python/__init__.py
         src/omni_python/log.py

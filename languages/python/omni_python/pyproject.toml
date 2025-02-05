@@ -1,6 +1,6 @@
 [project]
 name = "omni_python"
-version = "0.1.0"
+version = "0.2.0"
 authors = [
     { name="Yurii Rashkovskii", email="yrashk@gmail.com" },
 ]

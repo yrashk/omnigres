@@ -1,7 +1,7 @@
 import typing
 from typing import Any, TypedDict, Optional
 from dataclasses import dataclass
-
+from . import types
 
 @dataclass
 class pgtype:
