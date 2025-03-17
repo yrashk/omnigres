@@ -37,12 +37,18 @@ typedef struct BackgroundWorkerHandle {
  * @brief Module information
  */
 typedef struct {
-  char *name;     /*< name */
-  char *version;  /*< version */
-  char *identity; /*< unique module identity */
+  const char *name;     /*< name */
+  const char *version;  /*< version */
+  const char *identity; /*< unique module identity */
 } omni_module_information;
 
+#ifdef __cplusplus
+#define OMNI_MODULE_INFO(...)                                                                      \
+  omni_module_information _omni_module_information =                                               \
+      ([]() -> omni_module_information { return {__VA_ARGS__}; })()
+#else
 #define OMNI_MODULE_INFO(...) omni_module_information _omni_module_information = {__VA_ARGS__}
+#endif
 
 extern omni_module_information _omni_module_information;
 
