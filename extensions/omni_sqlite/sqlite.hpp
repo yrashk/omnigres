@@ -38,4 +38,36 @@ int sqlite3_db_dump(sqlite3 *db, const char *zSchema, const char *zTable,
                     int (*xCallback)(const char *, void *), void *pArg);
 }
 
+struct postgres_vtab {
+  postgres_vtab(sqlite3 *db, std::string_view table_name, std::string_view query) {
+    cppgres::spi_executor spi;
+    auto plan = spi.plan(query);
+    auto res =
+        spi.query<std::vector<cppgres::value>>(plan, cppgres::spi_executor::options(true, 0));
+    auto td = res.get_tuple_descriptor();
+
+    std::string table_def = cppgres::fmt::format("create table {} (", table_name);
+    for (int i = 0; i < td.attributes(); i++) {
+      names.push_back(std::string(td.get_name(i)));
+      types.push_back(td.get_type(i));
+      table_def.append(td.get_name(i));
+      table_def.append(" ");
+      table_def.append(" text");
+      if (i < td.attributes() - 1) {
+        table_def.append(", ");
+      }
+    }
+    table_def.append(")");
+    sqlite3_declare_vtab(db, table_def.c_str());
+    cppgres::report(NOTICE, "%s", table_def.c_str());
+  }
+
+private:
+  sqlite3_vtab base = {0};
+  std::vector<cppgres::type> types;
+  std::vector<std::string> names;
+};
+
+extern sqlite3_module postgres_module;
+
 #endif /* OMNI_SQLITE_H */

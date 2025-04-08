@@ -61,5 +61,12 @@ begin
     'MODULE_PATHNAME',
     'sqlite_deserialize'
         language c strict;
+
+        create function sqlite_test(text)
+        returns void
+    as
+    'MODULE_PATHNAME',
+    'sqlite_test'
+        language c strict;
 end;
 $$;

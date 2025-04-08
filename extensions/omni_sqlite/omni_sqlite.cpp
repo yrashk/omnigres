@@ -84,20 +84,20 @@ static void bind_params(sqlite3_stmt *stmt, std::optional<cppgres::record> param
         case INT4OID:
         case INT8OID:
           sqlite3_bind_int64(stmt, i + 1,
-                             cppgres::datum_conversion<int64_t>::from_datum(nd, std::nullopt));
+                             cppgres::datum_conversion<int64_t>::from_datum(nd, typoid, std::nullopt));
           break;
         case FLOAT4OID:
         case FLOAT8OID:
           sqlite3_bind_double(stmt, i + 1,
-                              cppgres::datum_conversion<double>::from_datum(nd, std::nullopt));
+                              cppgres::datum_conversion<double>::from_datum(nd, typoid, std::nullopt));
           break;
         case BYTEAOID: {
-          auto ba = cppgres::datum_conversion<cppgres::byte_array>::from_datum(nd, std::nullopt);
+          auto ba = cppgres::datum_conversion<cppgres::byte_array>::from_datum(nd, typoid, std::nullopt);
           sqlite3_bind_blob64(stmt, i + 1, ba.data(), ba.size_bytes(), nullptr);
           break;
         }
         case TEXTOID: {
-          auto str = cppgres::datum_conversion<std::string_view>::from_datum(nd, std::nullopt);
+          auto str = cppgres::datum_conversion<std::string_view>::from_datum(nd, typoid, std::nullopt);
           auto encoding = ::GetDatabaseEncoding();
 
           if (encoding != PG_UTF8) {
@@ -118,7 +118,7 @@ static void bind_params(sqlite3_stmt *stmt, std::optional<cppgres::record> param
           auto fc = cppgres::current_postgres_function::call_info();
           auto d = cppgres::ffi_guard{::OidFunctionCall1Coll}(outfun, (*fc)->fncollation, nd);
           auto cc =
-              cppgres::datum_conversion<const char *>::from_datum(cppgres::datum(d), std::nullopt);
+              cppgres::datum_conversion<const char *>::from_datum(cppgres::datum(d), typoid, std::nullopt);
           sqlite3_bind_text64(stmt, i + 1, cc, ::strlen(cc), nullptr, SQLITE_UTF8);
           break;
         }
@@ -287,3 +287,14 @@ postgres_function(sqlite_serialize, ([](cppgres::expanded_varlena<sqlite> db) {
                     sqlite3_free(data);
                     return arr;
                   }));
+
+postgres_function(sqlite_test, ([](cppgres::expanded_varlena<sqlite> db, std::string_view s) {
+
+  cppgres::spi_executor spi;
+  auto res = spi.query<cppgres::record>(cppgres::fmt::format("select (t) from ({}) as t", s));
+  for (auto &re: res) {
+    for (int i = 0; i < re.attributes(); i++) {
+      cppgres::report(NOTICE, "%s", cppgres::fmt::format("attr {} type {}", re.attribute_name(i), re.attribute_type(i).name()).c_str());
+    }
+  }
+}));

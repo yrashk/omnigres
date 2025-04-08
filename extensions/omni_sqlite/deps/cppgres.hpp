@@ -8061,7 +8061,8 @@ template <typename T, typename = void> struct datum_conversion {
    * Gets an optional @ref cppgres::memory_context when available to be able to determine the source
    * of the (pointer) datum.
    */
-  static T from_datum(const datum &, std::optional<memory_context> context = std::nullopt) = delete;
+  static T from_datum(const datum &, const oid,
+                      std::optional<memory_context> context = std::nullopt) = delete;
   /**
    * @brief Convert datum into a type
    *
@@ -8076,8 +8077,8 @@ concept convertible_into_datum = requires(T t) {
 };
 
 template <typename T>
-concept convertible_from_datum = requires(datum d, std::optional<memory_context> context) {
-  { datum_conversion<T, void>::from_datum(d, context) } -> std::same_as<T>;
+concept convertible_from_datum = requires(datum d, oid oid, std::optional<memory_context> context) {
+  { datum_conversion<T, void>::from_datum(d, oid, context) } -> std::same_as<T>;
 };
 
 template <typename T> struct unsupported_type {};
@@ -8085,14 +8086,15 @@ template <typename T> struct unsupported_type {};
 template <typename T>
 requires convertible_from_datum<T> ||
          (utils::is_optional<T> && convertible_from_datum<utils::remove_optional_t<T>>)
-T from_nullable_datum(const nullable_datum &d,
+T from_nullable_datum(const nullable_datum &d, const oid oid,
                       std::optional<memory_context> context = std::nullopt) {
   if constexpr (utils::is_optional<T>) {
     if (d.is_null()) {
       return std::nullopt;
     }
     if constexpr (convertible_from_datum<utils::remove_optional_t<T>>) {
-      return std::optional(datum_conversion<utils::remove_optional_t<T>>::from_datum(d, context));
+      return std::optional(
+          datum_conversion<utils::remove_optional_t<T>>::from_datum(d, oid, context));
     } else {
       static_assert("no viable conversion");
     }
@@ -8101,7 +8103,7 @@ T from_nullable_datum(const nullable_datum &d,
       throw std::runtime_error(cppgres::fmt::format("datum is null and can't be coerced into {}",
                                                     utils::type_name<T>()));
     }
-    return datum_conversion<T>::from_datum(d, context);
+    return datum_conversion<T>::from_datum(d, oid, context);
   }
 }
 
@@ -8123,7 +8125,7 @@ template <typename T> nullable_datum into_nullable_datum(const T &v) {
 template <typename T>
 concept convertible_from_nullable_datum = requires {
   {
-    cppgres::from_nullable_datum<T>(std::declval<nullable_datum>(),
+    cppgres::from_nullable_datum<T>(std::declval<nullable_datum>(), std::declval<oid>(),
                                     std::declval<std::optional<memory_context>>())
   } -> std::same_as<T>;
 };
@@ -8516,7 +8518,7 @@ template <syscached T, convertible_into_datum... D> struct syscache {
   syscache(const D &...key) : syscache(syscache_traits<T>::cache_id, key...) {}
   syscache(::SysCacheIdentifier cache_id, const D &...key)
       requires(sizeof...(key) > 0 && sizeof...(key) < 5)
-  {
+      : cache_id(cache_id) {
     datum keys[4] = {datum_conversion<D>::into_datum(key)...};
     tuple = ffi_guard{::SearchSysCache}(cache_id, keys[0], keys[1], keys[2], keys[3]);
 
@@ -8532,8 +8534,25 @@ template <syscached T, convertible_into_datum... D> struct syscache {
     return *reinterpret_cast<T>(GETSTRUCT(tuple));
   }
 
+  /**
+   * @brief Get an attribute by index
+   *
+   * @tparam V type to convert to
+   * @param attr attribute index
+   * @return
+   */
+  template <convertible_from_datum V> std::optional<V> get_attribute(int attr) {
+    bool isnull;
+    Datum ret = ffi_guard{::SysCacheGetAttr}(cache_id, tuple, attr, &isnull);
+    if (isnull) {
+      return std::nullopt;
+    }
+    return from_nullable_datum<V>(nullable_datum(ret), oid(/*FIXME*/ InvalidOid));
+  }
+
 private:
   HeapTuple tuple;
+  ::SysCacheIdentifier cache_id;
 };
 
 } // namespace cppgres
@@ -8573,18 +8592,24 @@ struct type {
 };
 
 template <typename T, typename = void> struct type_traits {
-  static bool is(const type &t) { return false; }
-  static type type_for() = delete;
+  type_traits() {}
+  type_traits(const T &) {}
+  bool is(const type &t) { return false; }
+  type type_for() = delete;
 };
 
 template <typename T> requires std::is_reference_v<T>
 struct type_traits<T> {
-  static constexpr type type_for() { return type_traits<std::remove_reference_t<T>>::type_for(); }
+  type_traits() {}
+  type_traits(const T &) {}
+  constexpr type type_for() { return type_traits<std::remove_reference_t<T>>().type_for(); }
 };
 
 template <typename T> struct type_traits<std::optional<T>> {
-  static bool is(const type &t) { return type_traits<T>::is(t); }
-  static constexpr type type_for() { return type_traits<T>::type_for(); }
+  type_traits() {}
+  type_traits(const std::optional<T> &) {}
+  bool is(const type &t) { return type_traits<T>().is(t); }
+  constexpr type type_for() { return type_traits<T>().type_for(); }
 };
 
 struct non_by_value_type : public type {
@@ -8762,8 +8787,8 @@ template <typename T>
 concept expanded_varlena_type = requires { typename T::flattenable_type; };
 
 template <typename T>
-concept has_a_type = requires {
-  { type_traits<T>::type_for() } -> std::same_as<type>;
+concept has_a_type = requires(type_traits<T> t) {
+  { t.type_for() } -> std::same_as<type>;
 };
 
 } // namespace cppgres
@@ -8779,8 +8804,8 @@ concept has_a_type = requires {
 namespace cppgres {
 
 template <> struct type_traits<void> {
-  static bool is(const type &t) { return t.oid == VOIDOID; }
-  static constexpr type type_for() { return type{.oid = VOIDOID}; }
+  bool is(const type &t) { return t.oid == VOIDOID; }
+  constexpr type type_for() { return type{.oid = VOIDOID}; }
 };
 
 template <> struct type_traits<oid> {
@@ -8789,106 +8814,138 @@ template <> struct type_traits<oid> {
 };
 
 template <typename S> struct type_traits<S, std::enable_if_t<utils::is_std_tuple<S>::value>> {
-  static bool is(const type &t) {
+  bool is(const type &t) {
     if (t.oid == RECORDOID) {
       return true;
     } else if constexpr (std::tuple_size_v<S> == 1) {
       // special case when we have a tuple of 1 matching the type
-      return type_traits<std::tuple_element_t<0, S>>::is(t);
+      return type_traits<std::tuple_element_t<0, S>>().is(t);
     }
     return false;
   }
-  static constexpr type type_for() { return type{.oid = RECORDOID}; }
+  constexpr type type_for() { return type{.oid = RECORDOID}; }
 };
 
 template <> struct type_traits<bool> {
-  static bool is(const type &t) { return t.oid == BOOLOID; }
-  static constexpr type type_for() { return type{.oid = BOOLOID}; }
+  type_traits() {}
+  type_traits(const bool &) {}
+  bool is(const type &t) { return t.oid == BOOLOID; }
+  constexpr type type_for() { return type{.oid = BOOLOID}; }
 };
 
 template <> struct type_traits<int64_t> {
-  static bool is(const type &t) { return t.oid == INT8OID || t.oid == INT4OID || t.oid == INT2OID; }
-  static constexpr type type_for() { return type{.oid = INT8OID}; }
+  type_traits() {}
+  type_traits(const int64_t &) {}
+  bool is(const type &t) { return t.oid == INT8OID || t.oid == INT4OID || t.oid == INT2OID; }
+  constexpr type type_for() { return type{.oid = INT8OID}; }
 };
 
 template <> struct type_traits<int32_t> {
-  static bool is(const type &t) { return t.oid == INT4OID || t.oid == INT2OID; }
-  static constexpr type type_for() { return type{.oid = INT4OID}; }
+  type_traits() {}
+  type_traits(const int32_t &) {}
+  bool is(const type &t) { return t.oid == INT4OID || t.oid == INT2OID; }
+  constexpr type type_for() { return type{.oid = INT4OID}; }
 };
 
 template <> struct type_traits<int16_t> {
-  static bool is(const type &t) { return t.oid == INT2OID; }
-  static constexpr type type_for() { return type{.oid = INT2OID}; }
+  type_traits() {}
+  type_traits(const int16_t &) {}
+  bool is(const type &t) { return t.oid == INT2OID; }
+  constexpr type type_for() { return type{.oid = INT2OID}; }
 };
 
 template <> struct type_traits<int8_t> {
-  static bool is(const type &t) { return t.oid == INT2OID; }
-  static constexpr type type_for() { return type{.oid = INT2OID}; }
+  type_traits() {}
+  type_traits(const int8_t &) {}
+  bool is(const type &t) { return t.oid == INT2OID; }
+  constexpr type type_for() { return type{.oid = INT2OID}; }
 };
 
 template <> struct type_traits<double> {
-  static bool is(const type &t) { return t.oid == FLOAT8OID || t.oid == FLOAT4OID; }
-  static constexpr type type_for() { return type{.oid = FLOAT8OID}; }
+  type_traits() {}
+  type_traits(const double &) {}
+  bool is(const type &t) { return t.oid == FLOAT8OID || t.oid == FLOAT4OID; }
+  constexpr type type_for() { return type{.oid = FLOAT8OID}; }
 };
 
 template <> struct type_traits<float> {
-  static bool is(const type &t) { return t.oid == FLOAT4OID; }
-  static constexpr type type_for() { return type{.oid = FLOAT4OID}; }
+  type_traits() {}
+  type_traits(const float &) {}
+  bool is(const type &t) { return t.oid == FLOAT4OID; }
+  constexpr type type_for() { return type{.oid = FLOAT4OID}; }
 };
 
 template <> struct type_traits<text> {
-  static bool is(const type &t) { return t.oid == TEXTOID; }
-  static constexpr type type_for() { return type{.oid = TEXTOID}; }
+  type_traits() {}
+  type_traits(const text &) {}
+  bool is(const type &t) { return t.oid == TEXTOID; }
+  constexpr type type_for() { return type{.oid = TEXTOID}; }
 };
 
 template <> struct type_traits<std::string_view> {
-  static bool is(const type &t) { return t.oid == TEXTOID; }
-  static constexpr type type_for() { return type{.oid = TEXTOID}; }
+  type_traits() {}
+  type_traits(const std::string_view &) {}
+  bool is(const type &t) { return t.oid == TEXTOID; }
+  constexpr type type_for() { return type{.oid = TEXTOID}; }
 };
 
 template <> struct type_traits<std::string> {
-  static bool is(const type &t) { return t.oid == TEXTOID; }
-  static constexpr type type_for() { return type{.oid = TEXTOID}; }
+  type_traits() {}
+  type_traits(const std::string &) {}
+  bool is(const type &t) { return t.oid == TEXTOID; }
+  constexpr type type_for() { return type{.oid = TEXTOID}; }
 };
 
 template <> struct type_traits<byte_array> {
-  static bool is(const type &t) { return t.oid == BYTEAOID; }
-  static constexpr type type_for() { return type{.oid = BYTEAOID}; }
+  type_traits() {}
+  type_traits(const byte_array &) {}
+  bool is(const type &t) { return t.oid == BYTEAOID; }
+  constexpr type type_for() { return type{.oid = BYTEAOID}; }
 };
 
 template <> struct type_traits<bytea> {
-  static bool is(const type &t) { return t.oid == BYTEAOID; }
-  static constexpr type type_for() { return type{.oid = BYTEAOID}; }
+  type_traits() {}
+  type_traits(const bytea &) {}
+  bool is(const type &t) { return t.oid == BYTEAOID; }
+  constexpr type type_for() { return type{.oid = BYTEAOID}; }
 };
 
 template <> struct type_traits<char *> {
-  static bool is(const type &t) { return t.oid == CSTRINGOID; }
-  static constexpr type type_for() { return type{.oid = CSTRINGOID}; }
+  type_traits() {}
+  type_traits(const char *&) {}
+  bool is(const type &t) { return t.oid == CSTRINGOID; }
+  constexpr type type_for() { return type{.oid = CSTRINGOID}; }
 };
 
 template <> struct type_traits<const char *> {
-  static bool is(const type &t) { return t.oid == CSTRINGOID; }
-  static constexpr type type_for() { return type{.oid = CSTRINGOID}; }
+  type_traits() {}
+  type_traits(const char *&) {}
+  bool is(const type &t) { return t.oid == CSTRINGOID; }
+  constexpr type type_for() { return type{.oid = CSTRINGOID}; }
 };
 
 template <std::size_t N> struct type_traits<const char[N]> {
-  static bool is(const type &t) { return t.oid == CSTRINGOID; }
-  static constexpr type type_for() { return type{.oid = CSTRINGOID}; }
+  type_traits() {}
+  type_traits(const char (&)[N]) {}
+  bool is(const type &t) { return t.oid == CSTRINGOID; }
+  constexpr type type_for() { return type{.oid = CSTRINGOID}; }
 };
 
 template <flattenable F> struct type_traits<expanded_varlena<F>> {
-  static bool is(const type &t) { return t.oid == F::type().oid; }
-  static constexpr type type_for() { return F::type(); }
+  type_traits() {}
+  type_traits(const expanded_varlena<F> &) {}
+  bool is(const type &t) { return t.oid == F::type().oid; }
+  constexpr type type_for() { return F::type(); }
 };
 
 template <> struct datum_conversion<datum> {
-  static datum from_datum(const datum &d, std::optional<memory_context>) { return d; }
+  static datum from_datum(const datum &d, oid, std::optional<memory_context>) { return d; }
 
   static datum into_datum(const datum &t) { return t; }
 };
 
 template <> struct datum_conversion<nullable_datum> {
-  static nullable_datum from_datum(const datum &d, std::optional<memory_context>) {
+  static nullable_datum from_datum(const datum &d, oid, std::optional<memory_context>) {
     return nullable_datum(d);
   }
 
@@ -8896,7 +8953,7 @@ template <> struct datum_conversion<nullable_datum> {
 };
 
 template <> struct datum_conversion<oid> {
-  static oid from_datum(const datum &d, std::optional<memory_context>) {
+  static oid from_datum(const datum &d, oid, std::optional<memory_context>) {
     return static_cast<oid>(d.operator const ::Datum &());
   }
 
@@ -8904,7 +8961,7 @@ template <> struct datum_conversion<oid> {
 };
 
 template <> struct datum_conversion<size_t> {
-  static size_t from_datum(const datum &d, std::optional<memory_context>) {
+  static size_t from_datum(const datum &d, oid, std::optional<memory_context>) {
     return static_cast<size_t>(d.operator const ::Datum &());
   }
 
@@ -8912,7 +8969,7 @@ template <> struct datum_conversion<size_t> {
 };
 
 template <> struct datum_conversion<int64_t> {
-  static int64_t from_datum(const datum &d, std::optional<memory_context>) {
+  static int64_t from_datum(const datum &d, oid, std::optional<memory_context>) {
     return static_cast<int64_t>(d.operator const ::Datum &());
   }
 
@@ -8920,28 +8977,28 @@ template <> struct datum_conversion<int64_t> {
 };
 
 template <> struct datum_conversion<int32_t> {
-  static int32_t from_datum(const datum &d, std::optional<memory_context>) {
+  static int32_t from_datum(const datum &d, oid, std::optional<memory_context>) {
     return static_cast<int32_t>(d.operator const ::Datum &());
   }
   static datum into_datum(const int32_t &t) { return datum(static_cast<::Datum>(t)); }
 };
 
 template <> struct datum_conversion<int16_t> {
-  static int16_t from_datum(const datum &d, std::optional<memory_context>) {
+  static int16_t from_datum(const datum &d, oid, std::optional<memory_context>) {
     return static_cast<int16_t>(d.operator const ::Datum &());
   }
   static datum into_datum(const int16_t &t) { return datum(static_cast<::Datum>(t)); }
 };
 
 template <> struct datum_conversion<bool> {
-  static bool from_datum(const datum &d, std::optional<memory_context>) {
+  static bool from_datum(const datum &d, oid, std::optional<memory_context>) {
     return static_cast<bool>(d.operator const ::Datum &());
   }
   static datum into_datum(const bool &t) { return datum(static_cast<::Datum>(t)); }
 };
 
 template <> struct datum_conversion<double> {
-  static double from_datum(const datum &d, std::optional<memory_context>) {
+  static double from_datum(const datum &d, oid, std::optional<memory_context>) {
     return static_cast<double>(d.operator const ::Datum &());
   }
 
@@ -8949,7 +9006,7 @@ template <> struct datum_conversion<double> {
 };
 
 template <> struct datum_conversion<float> {
-  static float from_datum(const datum &d, std::optional<memory_context>) {
+  static float from_datum(const datum &d, oid, std::optional<memory_context>) {
     return static_cast<float>(d.operator const ::Datum &());
   }
 
@@ -8958,13 +9015,15 @@ template <> struct datum_conversion<float> {
 
 // Specializations for text and bytea:
 template <> struct datum_conversion<text> {
-  static text from_datum(const datum &d, std::optional<memory_context> ctx) { return text{d, ctx}; }
+  static text from_datum(const datum &d, oid, std::optional<memory_context> ctx) {
+    return text{d, ctx};
+  }
 
   static datum into_datum(const text &t) { return t.get_datum(); }
 };
 
 template <> struct datum_conversion<bytea> {
-  static bytea from_datum(const datum &d, std::optional<memory_context> ctx) {
+  static bytea from_datum(const datum &d, oid, std::optional<memory_context> ctx) {
     return bytea{d, ctx};
   }
 
@@ -8972,7 +9031,7 @@ template <> struct datum_conversion<bytea> {
 };
 
 template <> struct datum_conversion<byte_array> {
-  static byte_array from_datum(const datum &d, std::optional<memory_context> ctx) {
+  static byte_array from_datum(const datum &d, oid, std::optional<memory_context> ctx) {
     return bytea{d, ctx};
   }
 
@@ -8987,8 +9046,8 @@ template <> struct datum_conversion<byte_array> {
 // Specializations for std::string_view and std::string.
 // Here we re-use the conversion for text.
 template <> struct datum_conversion<std::string_view> {
-  static std::string_view from_datum(const datum &d, std::optional<memory_context> ctx) {
-    return datum_conversion<text>::from_datum(d, ctx);
+  static std::string_view from_datum(const datum &d, oid oid, std::optional<memory_context> ctx) {
+    return datum_conversion<text>::from_datum(d, oid, ctx);
   }
 
   static datum into_datum(const std::string_view &t) {
@@ -9001,9 +9060,9 @@ template <> struct datum_conversion<std::string_view> {
 };
 
 template <> struct datum_conversion<std::string> {
-  static std::string from_datum(const datum &d, std::optional<memory_context> ctx) {
+  static std::string from_datum(const datum &d, oid oid, std::optional<memory_context> ctx) {
     // Convert the text to a std::string_view then construct a std::string.
-    return std::string(datum_conversion<text>::from_datum(d, ctx).operator std::string_view());
+    return std::string(datum_conversion<text>::from_datum(d, oid, ctx).operator std::string_view());
   }
 
   static datum into_datum(const std::string &t) {
@@ -9012,7 +9071,7 @@ template <> struct datum_conversion<std::string> {
 };
 
 template <> struct datum_conversion<const char *> {
-  static const char *from_datum(const datum &d, std::optional<memory_context> ctx) {
+  static const char *from_datum(const datum &d, oid, std::optional<memory_context> ctx) {
     return DatumGetPointer(d);
   }
 
@@ -9020,7 +9079,7 @@ template <> struct datum_conversion<const char *> {
 };
 
 template <std::size_t N> struct datum_conversion<char[N]> {
-  static const char *from_datum(const datum &d, std::optional<memory_context> ctx) {
+  static const char *from_datum(const datum &d, oid, std::optional<memory_context> ctx) {
     return DatumGetPointer(d);
   }
 
@@ -9028,7 +9087,7 @@ template <std::size_t N> struct datum_conversion<char[N]> {
 };
 
 template <typename T> struct datum_conversion<T, std::enable_if_t<expanded_varlena_type<T>>> {
-  static T from_datum(const datum &d, std::optional<memory_context> ctx) { return {d, ctx}; }
+  static T from_datum(const datum &d, oid, std::optional<memory_context> ctx) { return {d, ctx}; }
 
   static datum into_datum(const T &t) { return t.get_expanded_datum(); }
 };
@@ -9146,6 +9205,11 @@ struct tuple_descriptor {
     return *TupleDescAttr(tupdesc, n);
   }
 
+  type get_type(int n) const {
+    auto &att = operator[](n);
+    return {att.atttypid};
+  }
+
   /**
    * @brief Set attribute type
    *
@@ -9165,6 +9229,11 @@ struct tuple_descriptor {
     att.attalign = (*typ).typalign;
     att.atttypmod = (*typ).typtypmod;
     att.attbyval = (*typ).typbyval;
+  }
+
+  std::string_view get_name(int n) {
+    auto &att = operator[](n);
+    return NameStr(att.attname);
   }
 
   /**
@@ -9434,7 +9503,7 @@ static_assert(std::move_constructible<record>);
 static_assert(std::is_copy_assignable_v<record>);
 
 template <> struct datum_conversion<record> {
-  static record from_datum(const datum &d, std::optional<memory_context> ctx) {
+  static record from_datum(const datum &d, oid, std::optional<memory_context> ctx) {
     return {reinterpret_cast<HeapTupleHeader>(ffi_guard{::pg_detoast_datum}(
                 reinterpret_cast<struct ::varlena *>(d.operator const ::Datum &()))),
             ctx.has_value() ? ctx.value() : memory_context()};
@@ -9444,14 +9513,14 @@ template <> struct datum_conversion<record> {
 };
 
 template <> struct type_traits<record> {
-  static bool is(const type &t) {
+  bool is(const type &t) {
     if (t.oid == RECORDOID)
       return true;
     // Check if it is a composite type and therefore can be coerced to a record
     syscache<Form_pg_type, oid> cache(t.oid);
     return (*cache).typtype == 'c';
   }
-  static constexpr type type_for() { return {.oid = RECORDOID}; }
+  constexpr type type_for() { return {.oid = RECORDOID}; }
 };
 
 } // namespace cppgres
@@ -9479,7 +9548,7 @@ template <datumable_iterator I> struct set_iterator_traits {
 
 template <typename I> requires datumable_iterator<I>
 struct type_traits<I> {
-  static bool is(type &t) { return t.oid == RECORDOID; }
+  bool is(type &t) { return t.oid == RECORDOID; }
 };
 
 } // namespace cppgres
@@ -9609,7 +9678,7 @@ template <datumable_function Func> struct postgres_function {
       if (retset) {
         if constexpr (datumable_iterator<return_type>) {
           using set_value_type = set_iterator_traits<return_type>::value_type;
-          if (!type_traits<set_value_type>::is(rettype)) {
+          if (!type_traits<set_value_type>().is(rettype)) {
             report(ERROR, "unexpected set's return type, can't convert `%s` into `%.*s`",
                    rettype.name().data(), utils::type_name<set_value_type>().length(),
                    utils::type_name<set_value_type>().data());
@@ -9620,7 +9689,7 @@ template <datumable_function Func> struct postgres_function {
                  "`cppgres::datumable_iterator`",
                  utils::type_name<return_type>().length(), utils::type_name<return_type>().data());
         }
-      } else if (!type_traits<return_type>::is(rettype)) {
+      } else if (!type_traits<return_type>().is(rettype)) {
         report(ERROR, "unexpected return type, can't convert `%s` into `%.*s`",
                rettype.name().data(), utils::type_name<return_type>().length(),
                utils::type_name<return_type>().data());
@@ -9639,13 +9708,13 @@ template <datumable_function Func> struct postgres_function {
               typ = type{.oid = (*cache).proargtypes.values[Is]};
             }
           }
-          if (!type_traits<ptyp>::is(typ)) {
+          if (!type_traits<ptyp>().is(typ)) {
             report(ERROR, "unexpected type in position %d, can't convert `%s` into `%.*s`", Is,
                    typ.name().data(), utils::type_name<ptyp>().length(),
                    utils::type_name<ptyp>().data());
           }
           accounted_for_args++;
-          return from_nullable_datum<ptyp>(nullable_datum(fc->args[Is]));
+          return from_nullable_datum<ptyp>(nullable_datum(fc->args[Is]), typ.oid);
         }())...};
       }(std::make_index_sequence<utils::tuple_size_v<argument_types>>{});
 
@@ -9710,7 +9779,7 @@ template <datumable_function Func> struct postgres_function {
                auto oid = ffi_guard{::SPI_gettypeid}(rsinfo->expectedDesc, Is + 1);
                auto t = type{.oid = oid};
                using typ = utils::tuple_element_t<Is, set_value_type>;
-               if (!type_traits<typ>::is(t)) {
+               if (!type_traits<typ>().is(t)) {
                  throw std::invalid_argument(
                      cppgres::fmt::format("invalid type in record's position {} ({}), got OID {}", Is,
                                  utils::type_name<typ>(), oid));
@@ -9777,18 +9846,6 @@ template <datumable_function Func> struct postgres_function {
 
 namespace cppgres {
 
-template <typename Tuple, std::size_t... Is>
-constexpr bool all_convertible_from_nullable(std::index_sequence<Is...>) {
-  return ((convertible_from_nullable_datum<
-              utils::remove_optional_t<utils::tuple_element_t<Is, Tuple>>>) &&
-          ...);
-}
-
-template <typename T>
-concept datumable_tuple = requires {
-  typename utils::tuple_size<T>::type;
-} && all_convertible_from_nullable<T>(std::make_index_sequence<utils::tuple_size_v<T>>{});
-
 template <typename T>
 concept convertible_into_nullable_datum_and_has_a_type =
     convertible_into_nullable_datum<T> && has_a_type<T>;
@@ -9827,6 +9884,12 @@ private:
 
 struct executor {};
 
+template <typename T>
+concept a_vector = requires {
+  typename T::value_type;
+  typename T::allocator_type;
+} && std::same_as<T, std::vector<typename T::value_type, typename T::allocator_type>>;
+
 /**
  * @brief [SPI](https://www.postgresql.org/docs/current/spi.html) executor API
  */
@@ -9840,7 +9903,7 @@ struct spi_executor : public executor {
     executors.pop();
   }
 
-  template <datumable_tuple T> struct result_iterator {
+  template <typename T> struct result_iterator {
     using iterator_category = std::random_access_iterator_tag;
     using value_type = T;
     using difference_type = std::ptrdiff_t;
@@ -9918,24 +9981,41 @@ struct spi_executor : public executor {
           ::Datum value =
               ffi_guard{::SPI_getbinval}(tuptable->vals[n], tuptable->tupdesc, 1, &isnull);
           ::NullableDatum datum = {.value = value, .isnull = isnull};
-          auto ret =
-              from_nullable_datum<T>(nullable_datum(datum), memory_context(tuptable->tuptabcxt));
+          auto ret = from_nullable_datum<T>(nullable_datum(datum),
+                                            ffi_guard{::SPI_gettypeid}(tuptable->tupdesc, 1),
+                                            memory_context(tuptable->tuptabcxt));
           tuples.emplace(std::next(tuples.begin(), n), std::in_place, ret);
           return tuples.at(n).value();
         }
       }
-      auto ret = [&]<std::size_t... Is>(std::index_sequence<Is...>) {
-        return T{([&] {
+      if constexpr (a_vector<T>) {
+        T ret;
+        for (int i = 0; i < tuptable->tupdesc->natts; i++) {
           bool isnull;
           ::Datum value =
-              ffi_guard{::SPI_getbinval}(tuptable->vals[n], tuptable->tupdesc, Is + 1, &isnull);
+              ffi_guard{::SPI_getbinval}(tuptable->vals[n], tuptable->tupdesc, i + 1, &isnull);
           ::NullableDatum datum = {.value = value, .isnull = isnull};
           auto nd = nullable_datum(datum);
-          return from_nullable_datum<utils::tuple_element_t<Is, T>>(
-              nd, memory_context(tuptable->tuptabcxt));
-        }())...};
-      }(std::make_index_sequence<utils::tuple_size_v<T>>{});
-      tuples.emplace(std::next(tuples.begin(), n), std::in_place, ret);
+          ret.emplace_back(from_nullable_datum<typename T::value_type>(
+              nd, ffi_guard{::SPI_gettypeid}(tuptable->tupdesc, i + 1),
+              memory_context(tuptable->tuptabcxt)));
+        }
+        tuples.emplace(std::next(tuples.begin(), n), std::in_place, ret);
+      } else {
+        auto ret = [&]<std::size_t... Is>(std::index_sequence<Is...>) {
+          return T{([&] {
+            bool isnull;
+            ::Datum value =
+                ffi_guard{::SPI_getbinval}(tuptable->vals[n], tuptable->tupdesc, Is + 1, &isnull);
+            ::NullableDatum datum = {.value = value, .isnull = isnull};
+            auto nd = nullable_datum(datum);
+            return from_nullable_datum<utils::tuple_element_t<Is, T>>(
+                nd, ffi_guard{::SPI_gettypeid}(tuptable->tupdesc, Is + 1),
+                memory_context(tuptable->tuptabcxt));
+          }())...};
+        }(std::make_index_sequence<utils::tuple_size_v<T>>{});
+        tuples.emplace(std::next(tuples.begin(), n), std::in_place, ret);
+      }
       return tuples.at(n).value();
     }
 
@@ -9961,57 +10041,111 @@ struct spi_executor : public executor {
   private:
   };
 
-  template <datumable_tuple Ret> struct results {
+  template <typename Ret> struct results {
     ::SPITupleTable *table;
 
     results(::SPITupleTable *table) : table(table) {
       auto natts = table->tupdesc->natts;
-      if (natts != utils::tuple_size_v<Ret>) {
-        if (natts == 1 && convertible_from_datum<Ret>) {
-          // okay, this is just a type we can convert
-        } else {
-          throw std::runtime_error(cppgres::fmt::format("expected {} return values, got {}",
-                                                        utils::tuple_size_v<Ret>, natts));
+      if constexpr (a_vector<Ret>) {
+        for (int i = 0; i < natts; i++) {
+          auto oid = ffi_guard{::SPI_gettypeid}(table->tupdesc, i + 1);
+          auto t = type{.oid = oid};
+          if (!type_traits<typename Ret::value_type>().is(t)) {
+            throw std::invalid_argument(
+                cppgres::fmt::format("invalid return type in position {} ({}), got OID {}", i,
+                                     utils::type_name<typename Ret::value_type>(), oid));
+          }
         }
       } else {
-        [&]<std::size_t... Is>(std::index_sequence<Is...>) {
-          (([&] {
-             auto oid = ffi_guard{::SPI_gettypeid}(table->tupdesc, Is + 1);
-             auto t = type{.oid = oid};
-             if (!type_traits<utils::tuple_element_t<Is, Ret>>::is(t)) {
-               throw std::invalid_argument(
-                   cppgres::fmt::format("invalid return type in position {} ({}), got OID {}", Is,
-                                        utils::type_name<utils::tuple_element_t<Is, Ret>>(), oid));
-             }
-           }()),
-           ...);
-        }(std::make_index_sequence<utils::tuple_size_v<Ret>>{});
+        if (natts != utils::tuple_size_v<Ret>) {
+          if (natts == 1 && convertible_from_datum<Ret>) {
+            // okay, this is just a type we can convert
+          } else {
+            throw std::runtime_error(cppgres::fmt::format("expected {} return values, got {}",
+                                                          utils::tuple_size_v<Ret>, natts));
+          }
+        } else {
+          [&]<std::size_t... Is>(std::index_sequence<Is...>) {
+            (([&] {
+               auto oid = ffi_guard{::SPI_gettypeid}(table->tupdesc, Is + 1);
+               auto t = type{.oid = oid};
+               if (!type_traits<utils::tuple_element_t<Is, Ret>>().is(t)) {
+                 throw std::invalid_argument(cppgres::fmt::format(
+                     "invalid return type in position {} ({}), got OID {}", Is,
+                     utils::type_name<utils::tuple_element_t<Is, Ret>>(), oid));
+               }
+             }()),
+             ...);
+          }(std::make_index_sequence<utils::tuple_size_v<Ret>>{});
+        }
       }
     }
 
     result_iterator<Ret> begin() const { return result_iterator<Ret>(table); }
-    size_t end() const { return table->numvals; }
+    size_t end() const { return count(); }
+
+    size_t count() const { return table->numvals; }
+
+    tuple_descriptor get_tuple_descriptor() const { return table->tupdesc; }
+  };
+
+  struct options {
+    explicit options() : read_only_(false), count_(0) {}
+    options(bool read_only) : read_only_(read_only), count_(0) {}
+    options(int count) : read_only_(false), count_(count) {}
+    options(bool read_only, int count) : read_only_(read_only), count_(count) {}
+
+    bool read_only() const { return read_only_; }
+    int count() const { return count_; }
+
+  private:
+    bool read_only_;
+    int count_;
   };
 
   /**
    * @brief Queries using a string view
+   *
+   * @param query Query string
+   * @param args Query arguments
+   *
+   * @note if you need to be able to configure the execution, use another version of
+   *       the function with @ref cppgres::spi_executor::options argument
    *
    * @return Iterable @ref cppgres::spi_executor::results, can be a single value
    *
    * @throws std::runtime_error if there's another SPI executor in scope
    * @throws std::runtime_error if there's an SPI error
    */
-  template <datumable_tuple Ret, convertible_into_nullable_datum_and_has_a_type... Args>
+  template <typename Ret, convertible_into_nullable_datum_and_has_a_type... Args>
   results<Ret> query(std::string_view query, Args &&...args) {
+    return this->query<Ret>(query, options(), std::forward<Args>(args)...);
+  }
+
+  /**
+   * @brief Queries using a string view
+   *
+   * @param query Query string
+   * @param opts Execution options
+   * @param args Query arguments
+   *
+   * @return Iterable @ref cppgres::spi_executor::results, can be a single value
+   *
+   * @throws std::runtime_error if there's another SPI executor in scope
+   * @throws std::runtime_error if there's an SPI error
+   */
+  template <typename Ret, convertible_into_nullable_datum_and_has_a_type... Args>
+  results<Ret> query(std::string_view query, options &&opts, Args &&...args) {
     if (executors.top() != this) {
       throw std::runtime_error("not a current SPI executor");
     }
     constexpr size_t nargs = sizeof...(Args);
-    std::array<::Oid, nargs> types = {type_traits<Args>::type_for().oid...};
+    std::array<::Oid, nargs> types = {type_traits<Args>(args...).type_for().oid...};
     std::array<::Datum, nargs> datums = {into_nullable_datum(args)...};
     std::array<const char, nargs> nulls = {into_nullable_datum(args).is_null() ? 'n' : ' ' ...};
-    auto rc = ffi_guard{::SPI_execute_with_args}(query.data(), nargs, types.data(), datums.data(),
-                                                 nulls.data(), false, 0);
+    auto rc = ffi_guard{::SPI_execute_with_args}(std::string(query).c_str(), nargs, types.data(),
+                                                 datums.data(), nulls.data(), opts.read_only(),
+                                                 opts.count());
     if (rc > 0) {
       //      static_assert(std::random_access_iterator<result_iterator<Ret>>);
       return results<Ret>(SPI_tuptable);
@@ -10026,19 +10160,26 @@ struct spi_executor : public executor {
       throw std::runtime_error("not a current SPI executor");
     }
     constexpr size_t nargs = sizeof...(Args);
-    std::array<::Oid, nargs> types = {type_traits<Args>::type_for().oid...};
-    return spi_plan<Args...>(ffi_guard{::SPI_prepare}(query.data(), nargs, types.data()));
+    std::array<::Oid, nargs> types = {type_traits<Args>().type_for().oid...};
+    return spi_plan<Args...>(
+        ffi_guard{::SPI_prepare}(std::string(query).c_str(), nargs, types.data()));
   }
 
-  template <datumable_tuple Ret, convertible_into_nullable_datum... Args>
+  template <typename Ret, convertible_into_nullable_datum... Args>
   results<Ret> query(spi_plan<Args...> &query, Args &&...args) {
+    return this->query<Ret, Args...>(query, options(), std::forward<Args>(args)...);
+  }
+
+  template <typename Ret, convertible_into_nullable_datum... Args>
+  results<Ret> query(spi_plan<Args...> &query, options &&opts, Args &&...args) {
     if (executors.top() != this) {
       throw std::runtime_error("not a current SPI executor");
     }
     constexpr size_t nargs = sizeof...(Args);
     std::array<::Datum, nargs> datums = {into_nullable_datum(args)...};
     std::array<const char, nargs> nulls = {into_nullable_datum(args).is_null() ? 'n' : ' ' ...};
-    auto rc = ffi_guard{::SPI_execute_plan}(query, datums.data(), nulls.data(), false, 0);
+    auto rc = ffi_guard{::SPI_execute_plan}(query, datums.data(), nulls.data(), opts.read_only(),
+                                            opts.count());
     if (rc > 0) {
       //      static_assert(std::random_access_iterator<result_iterator<Ret>>);
       return results<Ret>(SPI_tuptable);
@@ -10049,15 +10190,20 @@ struct spi_executor : public executor {
 
   template <convertible_into_nullable_datum_and_has_a_type... Args>
   uint64_t execute(std::string_view query, Args &&...args) {
+    return execute(query, options(), std::forward<Args>(args)...);
+  }
+
+  template <convertible_into_nullable_datum_and_has_a_type... Args>
+  uint64_t execute(std::string_view query, options &&opts, Args &&...args) {
     if (executors.top() != this) {
       throw std::runtime_error("not a current SPI executor");
     }
     constexpr size_t nargs = sizeof...(Args);
-    std::array<::Oid, nargs> types = {type_traits<Args>::type_for().oid...};
+    std::array<::Oid, nargs> types = {type_traits<Args>(args...).type_for().oid...};
     std::array<::Datum, nargs> datums = {into_nullable_datum(args)...};
     std::array<const char, nargs> nulls = {into_nullable_datum(args).is_null() ? 'n' : ' ' ...};
     auto rc = ffi_guard{::SPI_execute_with_args}(query.data(), nargs, types.data(), datums.data(),
-                                                 nulls.data(), false, 0);
+                                                 nulls.data(), opts.read_only(), opts.count());
     if (rc >= 0) {
       return SPI_processed;
     } else {
@@ -11407,6 +11553,47 @@ private:
   std::queue<std::function<void()>> tasks;
   std::atomic<bool> done;
   std::atomic<bool> terminated;
+};
+
+} // namespace cppgres
+
+
+namespace cppgres {
+
+struct value {
+
+  value(nullable_datum &&datum, type &&type) : datum_(datum), type_(type) {}
+
+  const type &get_type() const { return type_; }
+
+  const nullable_datum &get_nullable_datum() const { return datum_; };
+
+private:
+  nullable_datum datum_;
+  type type_;
+};
+
+template <> struct datum_conversion<value> {
+  static value from_datum(const datum &d, oid oid, std::optional<memory_context>) {
+    return {nullable_datum(d), type{.oid = oid}};
+  }
+
+  static datum into_datum(const value &t) { return t.get_nullable_datum(); }
+};
+
+template <> struct type_traits<value> {
+  type_traits() : value_(std::nullopt) {}
+  type_traits(value &value) : value_(std::optional(std::ref(value))) {}
+  bool is(const type &t) { return !value_.has_value() || (*value_).get().get_type() == t; }
+  constexpr type type_for() {
+    if (value_.has_value()) {
+      return (*value_).get().get_type();
+    }
+    throw std::runtime_error("can't determine type for an uninitialized value");
+  }
+
+private:
+  std::optional<std::reference_wrapper<value>> value_;
 };
 
 } // namespace cppgres
