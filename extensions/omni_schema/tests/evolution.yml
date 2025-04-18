@@ -2,18 +2,6 @@ $schema: "https://raw.githubusercontent.com/omnigres/omnigres/master/pg_yregress
 instance:
   init:
     - create extension omni_schema cascade
-    - |
-      create procedure cleanup_databases() language plpgsql as
-          $$
-          declare 
-              rec record;
-          begin
-              for rec in select * from pg_database where not datistemplate and datname != 'yregress'
-                  loop
-                      execute format('alter database %I rename to %I', rec.datname, '_cleanup_' || rec.datname);
-                  end loop;
-          end;
-      $$;
 
 tests:
 
@@ -44,8 +32,6 @@ tests:
                   omni_vfs.local_fs('../../../../extensions/omni_schema/tests/fixture/evolution'), 'app_v2')
       where
           kind = 'file'
-  - name: workaround for pg < 17 to prevent blockage
-    query: call cleanup_databases()
   - name: capture the 2nd revision
     query: select omni_schema.capture_schema_revision(omni_vfs.table_fs('evolution'), 'v2', 'revisions')
   - name: we should now have two revisions
@@ -53,7 +39,9 @@ tests:
     results:
       - count: 2
   - create database test
+  #  - select omni_cloudevents.create_notice_publisher(publish_uncommitted => true)
   - name: try to migrate as is
+    #    notices: [ ]
     query: |
       with results as (
       select omni_schema.migrate_to_schema_revision(omni_vfs.table_fs('evolution'), 'revisions',revision, 'dbname=test '  ||

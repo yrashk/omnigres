@@ -1,0 +1,15 @@
+$schema: "https://raw.githubusercontent.com/omnigres/omnigres/master/pg_yregress/schema.json"
+instance:
+  init:
+  - create extension omni_schema cascade
+
+tests:
+
+- name: smoke test
+  transaction: false
+  tests:
+  - name: capture the revision
+    query: select omni_schema.capture_schema_revision(
+                          omni_vfs.local_fs('../../../../extensions/omni_schema/tests/fixture/evolution'), 'app_v1',
+                          'revisions')
+    notices: [ ]

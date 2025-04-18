@@ -24,22 +24,26 @@ begin
     else
         return query with
                          recursive
-                         revisions as (select
-                                           omni_vfs.dirname(name)::uuid::revision_id  as revision,
-                                           omni_yaml.to_json(convert_from(
-                                                   omni_vfs.read(fs, revisions_path || '/' || name),
-                                                   'utf-8'))::jsonb                   as metadata,
-                                           array((select
-                                                      jsonb_array_elements_text(coalesce(
-                                                              (omni_yaml.to_json(convert_from(
-                                                                      omni_vfs.read(fs, revisions_path || '/' || name),
-                                                                      'utf-8'))::jsonb) ->
-                                                              'parents',
-                                                              '[]'))))::revision_id[] as parents
-                                       from
-                                           omni_vfs.list_recursively(fs, revisions_path)
-                                       where
-                                           omni_vfs.basename(name) = 'metadata.yaml'),
+                         revdb
+                             as (select omni_sqlite.sqlite_deserialize(omni_vfs.read(fs, revisions_path || '/' || name)) as db
+                                 from
+                                     omni_vfs.list_recursively(fs, revisions_path)
+                                 where omni_vfs.basename(name) = 'revision.db'),
+                         revisions
+                             as (select id             as revision,
+                                        coalesce(array_agg(parent_id) filter (where parent_id is not null),
+                                                 '{}') as parents,
+                                        '{}'::jsonb    as metadata
+                                 from revdb
+                                          inner join lateral (select id::uuid::revision_id
+                                                              from omni_sqlite.sqlite_query(db,
+                                                                                            'select id from revision') as t (id text)) ids
+                                                     on true
+                                          left join lateral (select id::uuid::revision_id as parent_id
+                                                              from omni_sqlite.sqlite_query(db,
+                                                                                            'select id from parent') as t (id text)) parents
+                                                     on true
+                                 group by ids.id),
                          all_ancestors as (select
                                                r.revision,
                                                unnest(r.parents) as ancestor

@@ -11,13 +11,13 @@ declare
 begin
     case
         when data and not schema then opts := '-a';
-        when not data and schema then opts := '-s';
+        when not data and schema then opts := '-s --no-comments';
         when data and schema then null;
         when not data and not schema then raise exception 'either schema or data must be included';
         end case;
 
     select setting from pg_config() where name = 'BINDIR' into bindir;
-    create temporary table _pg_dump
+    create temporary table if not exists _pg_dump
     (
         id serial,
         value text

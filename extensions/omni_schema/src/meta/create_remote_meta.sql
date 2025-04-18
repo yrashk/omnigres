@@ -27,26 +27,36 @@ begin
             if not materialize then
                 raise exception 'dblink remote meta can only be materialized' using detail = 'This is because dblink is query execution oriented';
             end if;
+            import_schema := schema;
             perform set_config('search_path', import_schema || ',public', true);
 --## for view in meta_views
+            perform omni_cloudevents.publish(
+                    omni_cloudevents.cloudevent(
+                            id => gen_random_uuid(),
+                            source => format('psql://%s/%s', (select system_identifier from pg_control_system()),
+                                             current_database()),
+                            type => 'org.omnigres.omni_schema.progress_report.v1',
+                            data => 'Defining remote meta for /*{{ view }}*/...'::text
+                    )
+                    );
 
             declare
                 signature text;
             begin
-                select
-                    string_agg(quote_ident(rc.name) || ' ' ||
+                select string_agg(quote_ident(a.attname) || ' ' ||
                               -- FIXME: we are not quoting type name here (vv) because it may contain subscript for array types
-                              (quote_ident(type.schema_name) || '.' || type.name), ', ' order by rcp.position)
+                                  (quote_ident(tns.nspname) || '.' || t.typname), ', ' order by a.attnum)
                 into signature
-                from
-                    omni_schema.relation_column                   rc
-                    natural join omni_schema.relation_column_type rct
-                    natural join omni_schema.relation_column_position rcp
-                    inner join   omni_schema.type on type.id = type_id
-                where
-                    relation_id = omni_schema.relation_id('omni_schema', '/*{{ view }}*/');
+                from pg_class c
+                         inner join pg_namespace ns on ns.oid = c.relnamespace and ns.nspname = 'omni_schema'
+                         inner join pg_attribute a on a.attrelid = c.oid and a.attnum > 0
+                         inner join pg_type t on t.oid = a.atttypid
+                         inner join pg_namespace tns on tns.oid = t.typnamespace
+                where c.relname = '/*{{ view }}*/';
 
-                execute format('create view %1$I as select * from public.dblink(%2$L, ''select * from %3$I.%1$I'') as t(%4$s)', '/*{{ view }}*/',  server, remote_schema, signature);
+                execute format(
+                        'create table %1$I as select * from public.dblink(%2$L, ''select * from %3$I.%1$I'') as t(%4$s)',
+                        '/*{{ view }}*/', server, remote_schema, signature);
             end;
 --## endfor
             perform set_config('search_path', old_search_path, true);
@@ -67,11 +77,12 @@ begin
         $import$,
                 remote_schema, server, import_schema);
 
+        if materialize then
+            -- FIXME: hard-coded schema here
+            perform omni_schema.materialize_meta(import_schema, schema);
+        end if;
     end if;
-    if materialize then
-        -- FIXME: hard-coded schema here
-        perform omni_schema.materialize_meta(import_schema, schema);
-    end if;
+
     return;
 end;
 $create_remote_meta$;

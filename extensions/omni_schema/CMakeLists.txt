@@ -16,5 +16,5 @@ add_postgresql_extension(
         COMMENT "Advanced schema management tooling"
         SCHEMA omni_schema
         RELOCATABLE false
-        REQUIRES omni_sql omni_vfs omni_polyfill omni_yaml dblink postgres_fdw omni_types omni_cloudevents
+        REQUIRES omni_sql omni_vfs omni_polyfill omni_yaml dblink postgres_fdw omni_types omni_cloudevents omni_sqlite
         TESTS_REQUIRE omni_python)
