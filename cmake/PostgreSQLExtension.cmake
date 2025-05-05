@@ -147,6 +147,8 @@ function(add_postgresql_extension NAME)
     set(_multi SOURCES REQUIRES TESTS_REQUIRE REGRESS DEPENDS_ON UPGRADE_SCRIPTS)
     cmake_parse_arguments(_ext "${_optional}" "${_single}" "${_multi}" ${ARGN})
 
+    find_program(BASH bash REQUIRED)
+
     if(NOT DEFINED _ext_TARGET)
         set(_ext_TARGET ${NAME})
     endif()
@@ -421,7 +423,7 @@ $command $@
         endif ()
         add_custom_target(package_${_ext_TARGET}_migrations
                 WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-                COMMAND ${CMAKE_BINARY_DIR}/script_${_ext_TARGET} ${_pkg_dir}/extension)
+                COMMAND ${BASH} ${CMAKE_BINARY_DIR}/script_${_ext_TARGET} ${_pkg_dir}/extension)
     endif ()
 
     if(NOT TARGET package_extensions)
@@ -445,7 +447,7 @@ $command $@
     if(NOT _ext_PRIVATE)
         add_custom_target(prepare_${_ext_TARGET}
                 WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-                COMMAND ${CMAKE_BINARY_DIR}/script_${_ext_TARGET} ${_ext_dir})
+                COMMAND ${BASH} ${CMAKE_BINARY_DIR}/script_${_ext_TARGET} ${_ext_dir})
 
         if(NOT TARGET prepare)
             add_custom_target(prepare)
@@ -521,7 +523,7 @@ ${_loadextensions} \
             add_test(
                     NAME ${_ext_TARGET}
                     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-                    COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_${_ext_TARGER}
+                    COMMAND ${BASH} ${CMAKE_CURRENT_BINARY_DIR}/test_${_ext_TARGER}
             )
         endif()
 
@@ -630,7 +632,7 @@ ${PG_CTL} stop -D  \"$PSQLDB\" -m smart
                 )
         add_custom_target(psql_${_ext_TARGET}
                 WORKING_DIRECTORY "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/.."
-                COMMAND ${CMAKE_CURRENT_BINARY_DIR}/psql_${_ext_TARGET})
+                COMMAND ${BASH} ${CMAKE_CURRENT_BINARY_DIR}/psql_${_ext_TARGET})
         add_dependencies(psql_${_ext_TARGET} ${_ext_TARGET} prepare omni)
     endif()
 
