@@ -34,5 +34,26 @@ begin
         language c as
     'MODULE_PATHNAME';
 
+    create table io_handlers
+    (
+        library text not null,
+        name    text not null,
+        primary key (library, name)
+    );
+
+    insert
+    into io_handlers
+    values ('MODULE_PATHNAME', 'timer');
+
+    create function reload_io_handlers() returns trigger
+        language c as
+    'MODULE_PATHNAME';
+
+    create trigger reload_io_handlers
+        after insert or update or truncate or delete
+        on io_handlers
+        for each statement
+    execute function reload_io_handlers();
+
 end;
 $$;

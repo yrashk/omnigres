@@ -1,11 +1,14 @@
+// #define BOOST_ASIO_ENABLE_HANDLER_TRACKING
 #include <boost/container/string.hpp>
 #include <oink.hpp>
 
-#include <cppgres.hpp>
-
+#include "io_worker.hpp"
+#include "omni_worker.h"
 #include "omni_worker.hpp"
 
 #include <csignal>
+
+#include <cppgres.hpp>
 
 namespace bc = boost::container;
 namespace bip = boost::interprocess;
@@ -22,7 +25,26 @@ struct sql_message {
   sql_message(sql_message &&other) : stmt(std::move(other.stmt)), ready(0) {}
 };
 
-void sql_handler(sql_message *msg) {
+bool sql_handler(sql_message *msg, omni_worker::handle *handle) {
+
+  auto &service = boost::asio::use_service<io_worker_service>(handle->io_ctx);
+  if (!service.is_running()) {
+    return false;
+  }
+  auto timer = std::make_shared<boost::asio::steady_timer>(handle->io_ctx, std::chrono::seconds(1));
+  timer->async_wait([timer](const boost::system::error_code &ec) {
+    if (!ec) {
+      std::cout << "Timer fired!" << std::endl;
+
+    } else {
+      std::cout << "cancelled" << std::endl;
+    }
+    std::cout << std::flush;
+  });
+  std::cout << "Timer armed!" << std::endl;
+  //  handle->io_ctx.run();
+  //  handle->io_ctx.run_one();
+
   cppgres::exception_guard([msg]() {
     cppgres::transaction tx;
 
@@ -36,6 +58,8 @@ void sql_handler(sql_message *msg) {
     }
     msg->ready.post();
   })();
+
+  return true;
 }
 
 extern "C" void *omni_worker_handler(const char *name, std::size_t *hash) {
