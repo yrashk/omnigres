@@ -290,6 +290,7 @@ A collection of extensions that improve Postgres and turn it into a comprehensiv
 <details>
 <summary><strong>Development Tools</strong></summary>
 
+- **[omni_bytes](extensions/omni_sql/README.md)** - Byte and binary data handling
 - **[omni_sql](extensions/omni_sql/README.md)** - Programmatic SQL manipulation
 - **[omni_test](extensions/omni_test/README.md)** - Testing framework
 - **[omni_datasets](extensions/omni_dataset/README.md)** - Dataset provider

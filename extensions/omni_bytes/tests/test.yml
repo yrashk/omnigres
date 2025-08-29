@@ -1,0 +1,392 @@
+$schema: "https://raw.githubusercontent.com/omnigres/omnigres/master/pg_yregress/schema.json"
+instance:
+  init:
+  - create extension omni_bytes cascade
+  - set search_path to omni_bytes, pg_catalog, '$user', public
+  - |
+    -- Test data setup
+    create table test_data (
+        name text primary key,
+        data bytea,
+        description text
+    )
+#  - |
+#    insert into test_data values
+#    ('empty', ''::bytea, 'Empty bytea'),
+#    ('single_byte', '\x41'::bytea, 'Single ASCII byte (A)'),
+#    ('hello_world', 'Hello World!'::bytea, 'Simple ASCII text'),
+#    ('mixed_binary', (E'\x89\x50\x4E\x47' || E'\r\n\x1a\n' || 'Hello' || E'\x00' || 'World')::bytea, 'Mixed binary and text'),
+#    ('utf8_simple', ('Caf' || E'\xc3\xa9')::bytea, 'Simple UTF-8 (café)'),
+#    ('utf8_complex', ('Hello ' || E'\xf0\x9f\x8c\x8d' || ' World!')::bytea, 'UTF-8 with emoji'),
+#    ('control_chars', ('Line1' || E'\n' || 'Line2' || E'\r\n' || 'Line3' || E'\x00' || 'End')::bytea, 'Control characters'),
+#    ('high_bytes', E'\xff\xfe\xfd\xfc\x01\x02\x03\x04'::bytea, 'High and low bytes'),
+#    ('long_text', repeat('ABCD1234', 20)::bytea, 'Long repeating pattern')
+
+tests:
+
+# to_text() function tests
+- name: to_text function
+  tests:
+  - name: convert simple ASCII text
+    query: |
+      select to_text('Hello World!'::bytea) as result
+    results:
+    - result: "Hello World!"
+
+  - name: convert with explicit UTF-8 encoding
+    query: |
+      select to_text(E'Caf\xc3\xa9'::bytea, 'UTF8') as result
+    results:
+    - result: "Café"
+
+  - name: convert with default encoding
+    query: |
+      select to_text('Hello'::bytea) = convert_from('Hello'::bytea, getdatabaseencoding()) as same_as_default
+    results:
+    - same_as_default: true
+
+  - name: handle empty bytea
+    query: |
+      select to_text(''::bytea) as result
+    results:
+    - result: ""
+
+  - name: convert with latin1 encoding
+    query: |
+      select to_text(E'\\xe9'::bytea, 'LATIN1') as result
+    results:
+    - result: "é"
+
+# to_bytes() function tests
+- name: to_bytes function
+  tests:
+  - name: convert simple ASCII text
+    query: |
+      select to_bytes('Hello World!') = 'Hello World!'::bytea as result
+    results:
+    - result: true
+
+  - name: convert UTF-8 text with explicit encoding
+    query: |
+      select to_bytes('Café', 'UTF8') = E'Caf\xc3\xa9'::bytea as result
+    results:
+    - result: true
+
+  - name: handle empty string
+    query: |
+      select to_bytes('') = ''::bytea as result
+    results:
+    - result: true
+
+# hex_bytes() function tests
+- name: hex_bytes function
+  tests:
+  - name: basic hex conversion
+    query: |
+      select hex from hex_bytes('ABC'::bytea)
+    results:
+    - hex: "41 42 43"
+
+  - name: empty bytea returns no rows
+    query: |
+      select count(*) as row_count from hex_bytes(''::bytea)
+    results:
+    - row_count: 0
+
+  - name: single byte
+    query: |
+      select line, hex from hex_bytes('\x41'::bytea)
+    results:
+    - line: 1
+      hex: "41"
+
+  - name: width parameter controls line breaking
+    query: |
+      select line, hex from hex_bytes('ABCDEF'::bytea, width => 3)
+    results:
+    - line: 1
+      hex: "41 42 43"
+    - line: 2
+      hex: "44 45 46"
+
+  - name: group_size parameter controls spacing
+    query: |
+      select hex from hex_bytes('ABCDEF'::bytea, group_size => 2)
+    results:
+    - hex: "41 42  43 44  45 46"
+
+  - name: custom separators
+    query: |
+      select hex from hex_bytes('ABCD'::bytea, group_size => 2, byte_separator => '-', group_separator => '|')
+    results:
+    - hex: "41-42|43-44"
+
+  - name: handles incomplete last line
+    query: |
+      select line, hex from hex_bytes('ABCDE'::bytea, width => 4)
+    results:
+    - line: 1
+      hex: "41 42 43 44"
+    - line: 2
+      hex: "45"
+
+  - name: large data multiple lines
+    query: |
+      select count(*) as line_count, max(line) as max_line
+      from hex_bytes(repeat('A', 100)::bytea, width => 16)
+    results:
+    - line_count: 7
+      max_line: 7
+
+  - name: group_size larger than width
+    query: |
+      select hex from hex_bytes('ABCD'::bytea, width => 4, group_size => 10)
+    results:
+    - hex: "41 42 43 44"
+
+# bytes_offsets() function tests
+- name: bytes_offsets function
+  tests:
+  - name: basic hex offsets
+    query: |
+      select line, data_offset from bytes_offsets('Hello World!'::bytea)
+    results:
+    - line: 1
+      data_offset: "00000000"
+
+  - name: empty bytea returns no rows
+    query: |
+      select count(*) as row_count from bytes_offsets(''::bytea)
+    results:
+    - row_count: 0
+
+  - name: multiple lines with default width
+    query: |
+      select line, data_offset 
+      from bytes_offsets(repeat('A', 40)::bytea, width => 16)
+      order by line
+    results:
+    - line: 1
+      data_offset: "00000000"
+    - line: 2
+      data_offset: "00000010"
+    - line: 3
+      data_offset: "00000020"
+
+  - name: decimal offsets
+    query: |
+      select line, data_offset 
+      from bytes_offsets('Hello World!'::bytea, hex => false)
+    results:
+    - line: 1
+      data_offset: "00000000"
+
+  - name: custom length and padding
+    query: |
+      select data_offset from bytes_offsets('Hello'::bytea, length => 4, padding => 'X')
+    results:
+    - data_offset: "XXX0"
+
+  - name: decimal with large offset
+    query: |
+      select line, data_offset
+      from bytes_offsets(repeat('A', 200)::bytea, width => 100, hex => false)
+      order by line
+    results:
+    - line: 1
+      data_offset: "00000000"
+    - line: 2
+      data_offset: "00000100"
+
+  - name: hex with large offset
+    query: |
+      select line, data_offset
+      from bytes_offsets(repeat('A', 512)::bytea, width => 256)
+      order by line
+    results:
+    - line: 1
+      data_offset: "00000000"
+    - line: 2
+      data_offset: "00000100"
+
+# ascii_bytes() function tests
+- name: ascii_bytes function
+  tests:
+  - name: basic ASCII conversion
+    query: |
+      select ascii from ascii_bytes('Hello World!'::bytea)
+    results:
+    - ascii: "Hello World!"
+
+  - name: empty bytea returns no rows
+    query: |
+      select count(*) as row_count from ascii_bytes(''::bytea)
+    results:
+    - row_count: 0
+
+  - name: control characters become dots
+    query: |
+      select ascii from ascii_bytes(E'Hello\\x00\\x01\\x1World'::bytea)
+    results:
+    - ascii: "Hello...World"
+
+  - name: high bytes become dots
+    query: |
+      select ascii from ascii_bytes(E'\\xff\\xfe\\x80Test'::bytea)
+    results:
+    - ascii: "...Test"
+
+  - name: width parameter controls line breaking
+    query: |
+      select line, ascii from ascii_bytes('Hello World!'::bytea, width => 5)
+      order by line
+    results:
+    - line: 1
+      ascii: "Hello"
+    - line: 2
+      ascii: " Worl"
+    - line: 3
+      ascii: "d!"
+
+  - name: mixed printable and non-printable
+    query: |
+      select ascii from ascii_bytes(E'ABC\\x00DEF\\xff'::bytea)
+    results:
+    - ascii: "ABC.DEF."
+
+  - name: boundary ASCII values
+    query: |
+      select ascii from ascii_bytes(E'\\x1f \\x7e\\x7f'::bytea)
+    results:
+    - ascii: ". ~."
+
+  - name: UTF-8 bytes show as individual bytes
+    query: |
+      select ascii from ascii_bytes(E'Caf\\xc3\\xa9'::bytea)
+    results:
+    - ascii: "Caf.."
+
+
+## Combined function integration tests
+#- name: integration tests
+#  tests:
+#  - name: complete hexdump simulation
+#    query: |
+#      select o.data_offset, h.hex, a.ascii
+#      from test_data t
+#      cross join lateral bytes_offsets(t.data, 16) o
+#      join hex_bytes(t.data, 16) h using (line)
+#      join ascii_bytes(t.data, 16) a using (line)
+#      where t.name = 'hello_world'
+#    results:
+#    - data_offset: "00000000"
+#      hex: "48 65 6c 6c 6f 20 57 6f 72 6c 64 21"
+#      ascii: "Hello World!"
+#
+#  - name: empty data handling across all functions
+#    query: |
+#      select
+#        (select count(*) from hex_bytes(t.data)) as hex_rows,
+#        (select count(*) from bytes_offsets(t.data)) as offset_rows,
+#        (select count(*) from ascii_bytes(t.data)) as ascii_rows
+#      from test_data t where name = 'empty'
+#    results:
+#    - hex_rows: 0
+#      offset_rows: 0
+#      ascii_rows: 0
+#
+#  - name: consistent line numbering
+#    query: |
+#      select
+#        h.line = o.line as hex_offset_match,
+#        h.line = a.line as hex_ascii_match,
+#        o.line = a.line as offset_ascii_match
+#      from test_data t
+#      cross join lateral hex_bytes(t.data, 8) h
+#      join bytes_offsets(t.data, 8) o using (line)
+#      join ascii_bytes(t.data, 8) a using (line)
+#      where t.name = 'mixed_binary'
+#    results:
+#    - hex_offset_match: true
+#      hex_ascii_match: true
+#      offset_ascii_match: true
+#    - hex_offset_match: true
+#      hex_ascii_match: true
+#      offset_ascii_match: true
+#
+#  - name: width consistency across functions
+#    query: |
+#      select distinct
+#        length(replace(replace(h.hex, ' ', ''), '  ', '')) / 2 <= 8 as hex_respects_width,
+#        length(a.ascii) <= 8 as ascii_respects_width
+#      from test_data t
+#      cross join lateral hex_bytes(t.data, 8) h
+#      join ascii_bytes(t.data, 8) a using (line)
+#      where t.name = 'long_text'
+#    results:
+#    - hex_respects_width: true
+#      ascii_respects_width: true
+#
+## Error and edge case tests
+#- name: error and edge cases
+#  tests:
+#  - name: null data handling (should be handled by STRICT)
+#    query: |
+#      select
+#        (select count(*) from hex_bytes(null)) as hex_null,
+#        (select count(*) from bytes_offsets(null)) as offset_null,
+#        (select count(*) from ascii_bytes(null)) as ascii_null
+#    results:
+#    - hex_null: 0
+#      offset_null: 0
+#      ascii_null: 0
+#
+#  - name: zero width handling
+#    query: |
+#      select count(*) as row_count from hex_bytes('ABC'::bytea, width => 0)
+#    results:
+#    - row_count: 0
+#
+#  - name: negative width handling
+#    query: |
+#      select count(*) as row_count from hex_bytes('ABC'::bytea, width => -1)
+#    results:
+#    - row_count: 0
+#
+#  - name: very large width
+#    query: |
+#      select count(*) as row_count from hex_bytes('ABC'::bytea, width => 10000)
+#    results:
+#    - row_count: 1
+#
+#  - name: group_size edge cases
+#    query: |
+#      select
+#        (select hex from hex_bytes('ABCD'::bytea, group_size => 0)) as zero_group,
+#        (select hex from hex_bytes('ABCD'::bytea, group_size => -1)) as negative_group
+#    results:
+#    - zero_group: "41424344"
+#      negative_group: "41424344"
+#
+## Performance and stress tests
+#- name: performance tests
+#  tests:
+#  - name: large data processing
+#    query: |
+#      select
+#        count(*) as total_lines,
+#        count(*) = ceil(length(data)::float / 16) as expected_line_count
+#      from (select repeat('Test', 1000)::bytea as data) t
+#      cross join lateral hex_bytes(t.data, 16) h
+#    results:
+#    - total_lines: 250
+#      expected_line_count: true
+#
+#  - name: function consistency with different encodings
+#    query: |
+#      select
+#        to_text(to_bytes('Hello', 'UTF8'), 'UTF8') = 'Hello' as utf8_roundtrip,
+#        to_text(to_bytes('Hello', 'LATIN1'), 'LATIN1') = 'Hello' as latin1_roundtrip
+#    results:
+#    - utf8_roundtrip: true
+#      latin1_roundtrip: true
