@@ -1,0 +1,8 @@
+create extension omni_html;
+create function new_elt(omni_html.html_element) returns omni_html.html_element
+return '<h2>HA</h2>'::omni_html.html_element;
+
+select
+    omni_html.html_transform('<div><h1>Test</h1></div>'::omni_html.html_document,
+                             'omni_html.html_elements_by_tag_name(omni_html.html_document,text)'::regprocedure,
+                             'new_elt', 'h1'::text);
