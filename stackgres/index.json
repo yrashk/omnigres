@@ -1,0 +1,1312 @@
+{
+  "extensions": [
+    {
+      "name": "omni_datasets",
+      "publisher": "com.omnigres",
+      "license": "Apache-2.0",
+      "abstract": "",
+      "description": "",
+      "channels": {},
+      "tags": [],
+      "versions": [
+        {
+          "version": "0.1.0",
+          "availableFor": [
+            {
+              "flavor": "pg",
+              "arch": "aarch64",
+              "build": "6.44",
+              "postgresVersion": "17",
+              "postgresExactVersion": "17.6"
+            },
+            {
+              "flavor": "pg",
+              "arch": "x86_64",
+              "build": "6.44",
+              "postgresVersion": "17",
+              "postgresExactVersion": "17.6"
+            }
+          ]
+        }
+      ],
+      "url": "https://omnigres.com",
+      "source": "https://github.com/omnigres/omnigres"
+    },
+    {
+      "name": "omni_kube",
+      "publisher": "com.omnigres",
+      "license": "Apache-2.0",
+      "abstract": "",
+      "description": "",
+      "channels": {},
+      "tags": [],
+      "versions": [
+        {
+          "version": "0.4.2",
+          "availableFor": [
+            {
+              "flavor": "pg",
+              "arch": "aarch64",
+              "build": "6.44",
+              "postgresVersion": "17",
+              "postgresExactVersion": "17.6"
+            },
+            {
+              "flavor": "pg",
+              "arch": "x86_64",
+              "build": "6.44",
+              "postgresVersion": "17",
+              "postgresExactVersion": "17.6"
+            }
+          ]
+        }
+      ],
+      "url": "https://omnigres.com",
+      "source": "https://github.com/omnigres/omnigres"
+    },
+    {
+      "name": "omni_manifest",
+      "publisher": "com.omnigres",
+      "license": "Apache-2.0",
+      "abstract": "",
+      "description": "",
+      "channels": {},
+      "tags": [],
+      "versions": [
+        {
+          "version": "0.1.2",
+          "availableFor": [
+            {
+              "flavor": "pg",
+              "arch": "aarch64",
+              "build": "6.44",
+              "postgresVersion": "17",
+              "postgresExactVersion": "17.6"
+            },
+            {
+              "flavor": "pg",
+              "arch": "x86_64",
+              "build": "6.44",
+              "postgresVersion": "17",
+              "postgresExactVersion": "17.6"
+            }
+          ]
+        }
+      ],
+      "url": "https://omnigres.com",
+      "source": "https://github.com/omnigres/omnigres"
+    },
+    {
+      "name": "omni_txn",
+      "publisher": "com.omnigres",
+      "license": "Apache-2.0",
+      "abstract": "",
+      "description": "",
+      "channels": {},
+      "tags": [],
+      "versions": [
+        {
+          "version": "0.5.0",
+          "availableFor": [
+            {
+              "flavor": "pg",
+              "arch": "aarch64",
+              "build": "6.44",
+              "postgresVersion": "17",
+              "postgresExactVersion": "17.6"
+            },
+            {
+              "flavor": "pg",
+              "arch": "x86_64",
+              "build": "6.44",
+              "postgresVersion": "17",
+              "postgresExactVersion": "17.6"
+            }
+          ]
+        }
+      ],
+      "url": "https://omnigres.com",
+      "source": "https://github.com/omnigres/omnigres"
+    },
+    {
+      "name": "omni_cloudevents",
+      "publisher": "com.omnigres",
+      "license": "Apache-2.0",
+      "abstract": "",
+      "description": "",
+      "channels": {},
+      "tags": [],
+      "versions": [
+        {
+          "version": "0.1.0",
+          "availableFor": [
+            {
+              "flavor": "pg",
+              "arch": "aarch64",
+              "build": "6.44",
+              "postgresVersion": "17",
+              "postgresExactVersion": "17.6"
+            },
+            {
+              "flavor": "pg",
+              "arch": "x86_64",
+              "build": "6.44",
+              "postgresVersion": "17",
+              "postgresExactVersion": "17.6"
+            }
+          ]
+        }
+      ],
+      "url": "https://omnigres.com",
+      "source": "https://github.com/omnigres/omnigres"
+    },
+    {
+      "name": "omni_types",
+      "publisher": "com.omnigres",
+      "license": "Apache-2.0",
+      "abstract": "",
+      "description": "",
+      "channels": {},
+      "tags": [],
+      "versions": [
+        {
+          "version": "0.3.6",
+          "availableFor": [
+            {
+              "flavor": "pg",
+              "arch": "aarch64",
+              "build": "6.44",
+              "postgresVersion": "17",
+              "postgresExactVersion": "17.6"
+            },
+            {
+              "flavor": "pg",
+              "arch": "x86_64",
+              "build": "6.44",
+              "postgresVersion": "17",
+              "postgresExactVersion": "17.6"
+            }
+          ]
+        }
+      ],
+      "url": "https://omnigres.com",
+      "source": "https://github.com/omnigres/omnigres"
+    },
+    {
+      "name": "omni_vfs",
+      "publisher": "com.omnigres",
+      "license": "Apache-2.0",
+      "abstract": "",
+      "description": "",
+      "channels": {},
+      "tags": [],
+      "versions": [
+        {
+          "version": "0.2.2",
+          "availableFor": [
+            {
+              "flavor": "pg",
+              "arch": "aarch64",
+              "build": "6.44",
+              "postgresVersion": "17",
+              "postgresExactVersion": "17.6"
+            },
+            {
+              "flavor": "pg",
+              "arch": "x86_64",
+              "build": "6.44",
+              "postgresVersion": "17",
+              "postgresExactVersion": "17.6"
+            }
+          ]
+        }
+      ],
+      "url": "https://omnigres.com",
+      "source": "https://github.com/omnigres/omnigres"
+    },
+    {
+      "name": "omni_containers",
+      "publisher": "com.omnigres",
+      "license": "Apache-2.0",
+      "abstract": "",
+      "description": "",
+      "channels": {},
+      "tags": [],
+      "versions": [
+        {
+          "version": "0.2.0",
+          "availableFor": [
+            {
+              "flavor": "pg",
+              "arch": "aarch64",
+              "build": "6.44",
+              "postgresVersion": "17",
+              "postgresExactVersion": "17.6"
+            },
+            {
+              "flavor": "pg",
+              "arch": "x86_64",
+              "build": "6.44",
+              "postgresVersion": "17",
+              "postgresExactVersion": "17.6"
+            }
+          ]
+        }
+      ],
+      "url": "https://omnigres.com",
+      "source": "https://github.com/omnigres/omnigres"
+    },
+    {
+      "name": "omni_worker",
+      "publisher": "com.omnigres",
+      "license": "Apache-2.0",
+      "abstract": "",
+      "description": "",
+      "channels": {},
+      "tags": [],
+      "versions": [
+        {
+          "version": "0.2.1",
+          "availableFor": [
+            {
+              "flavor": "pg",
+              "arch": "aarch64",
+              "build": "6.44",
+              "postgresVersion": "17",
+              "postgresExactVersion": "17.6"
+            },
+            {
+              "flavor": "pg",
+              "arch": "x86_64",
+              "build": "6.44",
+              "postgresVersion": "17",
+              "postgresExactVersion": "17.6"
+            }
+          ]
+        }
+      ],
+      "url": "https://omnigres.com",
+      "source": "https://github.com/omnigres/omnigres"
+    },
+    {
+      "name": "omni_rest",
+      "publisher": "com.omnigres",
+      "license": "Apache-2.0",
+      "abstract": "",
+      "description": "",
+      "channels": {},
+      "tags": [],
+      "versions": [
+        {
+          "version": "0.1.1",
+          "availableFor": [
+            {
+              "flavor": "pg",
+              "arch": "aarch64",
+              "build": "6.44",
+              "postgresVersion": "17",
+              "postgresExactVersion": "17.6"
+            },
+            {
+              "flavor": "pg",
+              "arch": "x86_64",
+              "build": "6.44",
+              "postgresVersion": "17",
+              "postgresExactVersion": "17.6"
+            }
+          ]
+        }
+      ],
+      "url": "https://omnigres.com",
+      "source": "https://github.com/omnigres/omnigres"
+    },
+    {
+      "name": "omni_mimetypes",
+      "publisher": "com.omnigres",
+      "license": "Apache-2.0",
+      "abstract": "",
+      "description": "",
+      "channels": {},
+      "tags": [],
+      "versions": [
+        {
+          "version": "0.1.0",
+          "availableFor": [
+            {
+              "flavor": "pg",
+              "arch": "aarch64",
+              "build": "6.44",
+              "postgresVersion": "17",
+              "postgresExactVersion": "17.6"
+            },
+            {
+              "flavor": "pg",
+              "arch": "x86_64",
+              "build": "6.44",
+              "postgresVersion": "17",
+              "postgresExactVersion": "17.6"
+            }
+          ]
+        }
+      ],
+      "url": "https://omnigres.com",
+      "source": "https://github.com/omnigres/omnigres"
+    },
+    {
+      "name": "omni_xml",
+      "publisher": "com.omnigres",
+      "license": "Apache-2.0",
+      "abstract": "",
+      "description": "",
+      "channels": {},
+      "tags": [],
+      "versions": [
+        {
+          "version": "0.1.2",
+          "availableFor": [
+            {
+              "flavor": "pg",
+              "arch": "aarch64",
+              "build": "6.44",
+              "postgresVersion": "17",
+              "postgresExactVersion": "17.6"
+            },
+            {
+              "flavor": "pg",
+              "arch": "x86_64",
+              "build": "6.44",
+              "postgresVersion": "17",
+              "postgresExactVersion": "17.6"
+            }
+          ]
+        }
+      ],
+      "url": "https://omnigres.com",
+      "source": "https://github.com/omnigres/omnigres"
+    },
+    {
+      "name": "omni_regex",
+      "publisher": "com.omnigres",
+      "license": "Apache-2.0",
+      "abstract": "",
+      "description": "",
+      "channels": {},
+      "tags": [],
+      "versions": [
+        {
+          "version": "0.1.0",
+          "availableFor": [
+            {
+              "flavor": "pg",
+              "arch": "aarch64",
+              "build": "6.44",
+              "postgresVersion": "17",
+              "postgresExactVersion": "17.6"
+            },
+            {
+              "flavor": "pg",
+              "arch": "x86_64",
+              "build": "6.44",
+              "postgresVersion": "17",
+              "postgresExactVersion": "17.6"
+            }
+          ]
+        }
+      ],
+      "url": "https://omnigres.com",
+      "source": "https://github.com/omnigres/omnigres"
+    },
+    {
+      "name": "omni_var",
+      "publisher": "com.omnigres",
+      "license": "Apache-2.0",
+      "abstract": "",
+      "description": "",
+      "channels": {},
+      "tags": [],
+      "versions": [
+        {
+          "version": "0.3.0",
+          "availableFor": [
+            {
+              "flavor": "pg",
+              "arch": "aarch64",
+              "build": "6.44",
+              "postgresVersion": "17",
+              "postgresExactVersion": "17.6"
+            },
+            {
+              "flavor": "pg",
+              "arch": "x86_64",
+              "build": "6.44",
+              "postgresVersion": "17",
+              "postgresExactVersion": "17.6"
+            }
+          ]
+        }
+      ],
+      "url": "https://omnigres.com",
+      "source": "https://github.com/omnigres/omnigres"
+    },
+    {
+      "name": "omni_json",
+      "publisher": "com.omnigres",
+      "license": "Apache-2.0",
+      "abstract": "",
+      "description": "",
+      "channels": {},
+      "tags": [],
+      "versions": [
+        {
+          "version": "0.1.1",
+          "availableFor": [
+            {
+              "flavor": "pg",
+              "arch": "aarch64",
+              "build": "6.44",
+              "postgresVersion": "17",
+              "postgresExactVersion": "17.6"
+            },
+            {
+              "flavor": "pg",
+              "arch": "x86_64",
+              "build": "6.44",
+              "postgresVersion": "17",
+              "postgresExactVersion": "17.6"
+            }
+          ]
+        }
+      ],
+      "url": "https://omnigres.com",
+      "source": "https://github.com/omnigres/omnigres"
+    },
+    {
+      "name": "omni_schema",
+      "publisher": "com.omnigres",
+      "license": "Apache-2.0",
+      "abstract": "",
+      "description": "",
+      "channels": {},
+      "tags": [],
+      "versions": [
+        {
+          "version": "0.3.0",
+          "availableFor": [
+            {
+              "flavor": "pg",
+              "arch": "aarch64",
+              "build": "6.44",
+              "postgresVersion": "17",
+              "postgresExactVersion": "17.6"
+            },
+            {
+              "flavor": "pg",
+              "arch": "x86_64",
+              "build": "6.44",
+              "postgresVersion": "17",
+              "postgresExactVersion": "17.6"
+            }
+          ]
+        }
+      ],
+      "url": "https://omnigres.com",
+      "source": "https://github.com/omnigres/omnigres"
+    },
+    {
+      "name": "omni_os",
+      "publisher": "com.omnigres",
+      "license": "Apache-2.0",
+      "abstract": "",
+      "description": "",
+      "channels": {},
+      "tags": [],
+      "versions": [
+        {
+          "version": "0.1.1",
+          "availableFor": [
+            {
+              "flavor": "pg",
+              "arch": "aarch64",
+              "build": "6.44",
+              "postgresVersion": "17",
+              "postgresExactVersion": "17.6"
+            },
+            {
+              "flavor": "pg",
+              "arch": "x86_64",
+              "build": "6.44",
+              "postgresVersion": "17",
+              "postgresExactVersion": "17.6"
+            }
+          ]
+        }
+      ],
+      "url": "https://omnigres.com",
+      "source": "https://github.com/omnigres/omnigres"
+    },
+    {
+      "name": "omni_http",
+      "publisher": "com.omnigres",
+      "license": "Apache-2.0",
+      "abstract": "",
+      "description": "",
+      "channels": {},
+      "tags": [],
+      "versions": [
+        {
+          "version": "0.1.0",
+          "availableFor": [
+            {
+              "flavor": "pg",
+              "arch": "aarch64",
+              "build": "6.44",
+              "postgresVersion": "17",
+              "postgresExactVersion": "17.6"
+            },
+            {
+              "flavor": "pg",
+              "arch": "x86_64",
+              "build": "6.44",
+              "postgresVersion": "17",
+              "postgresExactVersion": "17.6"
+            }
+          ]
+        }
+      ],
+      "url": "https://omnigres.com",
+      "source": "https://github.com/omnigres/omnigres"
+    },
+    {
+      "name": "omni_id",
+      "publisher": "com.omnigres",
+      "license": "Apache-2.0",
+      "abstract": "",
+      "description": "",
+      "channels": {},
+      "tags": [],
+      "versions": [
+        {
+          "version": "0.4.3",
+          "availableFor": [
+            {
+              "flavor": "pg",
+              "arch": "aarch64",
+              "build": "6.44",
+              "postgresVersion": "17",
+              "postgresExactVersion": "17.6"
+            },
+            {
+              "flavor": "pg",
+              "arch": "x86_64",
+              "build": "6.44",
+              "postgresVersion": "17",
+              "postgresExactVersion": "17.6"
+            }
+          ]
+        }
+      ],
+      "url": "https://omnigres.com",
+      "source": "https://github.com/omnigres/omnigres"
+    },
+    {
+      "name": "omni_web",
+      "publisher": "com.omnigres",
+      "license": "Apache-2.0",
+      "abstract": "",
+      "description": "",
+      "channels": {},
+      "tags": [],
+      "versions": [
+        {
+          "version": "0.3.0",
+          "availableFor": [
+            {
+              "flavor": "pg",
+              "arch": "aarch64",
+              "build": "6.44",
+              "postgresVersion": "17",
+              "postgresExactVersion": "17.6"
+            },
+            {
+              "flavor": "pg",
+              "arch": "x86_64",
+              "build": "6.44",
+              "postgresVersion": "17",
+              "postgresExactVersion": "17.6"
+            }
+          ]
+        }
+      ],
+      "url": "https://omnigres.com",
+      "source": "https://github.com/omnigres/omnigres"
+    },
+    {
+      "name": "omni_yaml",
+      "publisher": "com.omnigres",
+      "license": "Apache-2.0",
+      "abstract": "",
+      "description": "",
+      "channels": {},
+      "tags": [],
+      "versions": [
+        {
+          "version": "0.1.0",
+          "availableFor": [
+            {
+              "flavor": "pg",
+              "arch": "aarch64",
+              "build": "6.44",
+              "postgresVersion": "17",
+              "postgresExactVersion": "17.6"
+            },
+            {
+              "flavor": "pg",
+              "arch": "x86_64",
+              "build": "6.44",
+              "postgresVersion": "17",
+              "postgresExactVersion": "17.6"
+            }
+          ]
+        }
+      ],
+      "url": "https://omnigres.com",
+      "source": "https://github.com/omnigres/omnigres"
+    },
+    {
+      "name": "omni_seq",
+      "publisher": "com.omnigres",
+      "license": "Apache-2.0",
+      "abstract": "",
+      "description": "",
+      "channels": {},
+      "tags": [],
+      "versions": [
+        {
+          "version": "0.1.1",
+          "availableFor": [
+            {
+              "flavor": "pg",
+              "arch": "aarch64",
+              "build": "6.44",
+              "postgresVersion": "17",
+              "postgresExactVersion": "17.6"
+            },
+            {
+              "flavor": "pg",
+              "arch": "x86_64",
+              "build": "6.44",
+              "postgresVersion": "17",
+              "postgresExactVersion": "17.6"
+            }
+          ]
+        }
+      ],
+      "url": "https://omnigres.com",
+      "source": "https://github.com/omnigres/omnigres"
+    },
+    {
+      "name": "omni_service",
+      "publisher": "com.omnigres",
+      "license": "Apache-2.0",
+      "abstract": "",
+      "description": "",
+      "channels": {},
+      "tags": [],
+      "versions": [
+        {
+          "version": "0.1.0",
+          "availableFor": [
+            {
+              "flavor": "pg",
+              "arch": "aarch64",
+              "build": "6.44",
+              "postgresVersion": "17",
+              "postgresExactVersion": "17.6"
+            },
+            {
+              "flavor": "pg",
+              "arch": "x86_64",
+              "build": "6.44",
+              "postgresVersion": "17",
+              "postgresExactVersion": "17.6"
+            }
+          ]
+        }
+      ],
+      "url": "https://omnigres.com",
+      "source": "https://github.com/omnigres/omnigres"
+    },
+    {
+      "name": "omni_vfs_types_v1",
+      "publisher": "com.omnigres",
+      "license": "Apache-2.0",
+      "abstract": "",
+      "description": "",
+      "channels": {},
+      "tags": [],
+      "versions": [
+        {
+          "version": "0.1.0",
+          "availableFor": [
+            {
+              "flavor": "pg",
+              "arch": "aarch64",
+              "build": "6.44",
+              "postgresVersion": "17",
+              "postgresExactVersion": "17.6"
+            },
+            {
+              "flavor": "pg",
+              "arch": "x86_64",
+              "build": "6.44",
+              "postgresVersion": "17",
+              "postgresExactVersion": "17.6"
+            }
+          ]
+        }
+      ],
+      "url": "https://omnigres.com",
+      "source": "https://github.com/omnigres/omnigres"
+    },
+    {
+      "name": "omni_auth",
+      "publisher": "com.omnigres",
+      "license": "Apache-2.0",
+      "abstract": "",
+      "description": "",
+      "channels": {},
+      "tags": [],
+      "versions": [
+        {
+          "version": "0.1.3",
+          "availableFor": [
+            {
+              "flavor": "pg",
+              "arch": "aarch64",
+              "build": "6.44",
+              "postgresVersion": "17",
+              "postgresExactVersion": "17.6"
+            },
+            {
+              "flavor": "pg",
+              "arch": "x86_64",
+              "build": "6.44",
+              "postgresVersion": "17",
+              "postgresExactVersion": "17.6"
+            }
+          ]
+        }
+      ],
+      "url": "https://omnigres.com",
+      "source": "https://github.com/omnigres/omnigres"
+    },
+    {
+      "name": "omni_csv",
+      "publisher": "com.omnigres",
+      "license": "Apache-2.0",
+      "abstract": "",
+      "description": "",
+      "channels": {},
+      "tags": [],
+      "versions": [
+        {
+          "version": "0.1.1",
+          "availableFor": [
+            {
+              "flavor": "pg",
+              "arch": "aarch64",
+              "build": "6.44",
+              "postgresVersion": "17",
+              "postgresExactVersion": "17.6"
+            },
+            {
+              "flavor": "pg",
+              "arch": "x86_64",
+              "build": "6.44",
+              "postgresVersion": "17",
+              "postgresExactVersion": "17.6"
+            }
+          ]
+        }
+      ],
+      "url": "https://omnigres.com",
+      "source": "https://github.com/omnigres/omnigres"
+    },
+    {
+      "name": "omni_sqlite",
+      "publisher": "com.omnigres",
+      "license": "Apache-2.0",
+      "abstract": "",
+      "description": "",
+      "channels": {},
+      "tags": [],
+      "versions": [
+        {
+          "version": "0.2.2",
+          "availableFor": [
+            {
+              "flavor": "pg",
+              "arch": "aarch64",
+              "build": "6.44",
+              "postgresVersion": "17",
+              "postgresExactVersion": "17.6"
+            },
+            {
+              "flavor": "pg",
+              "arch": "x86_64",
+              "build": "6.44",
+              "postgresVersion": "17",
+              "postgresExactVersion": "17.6"
+            }
+          ]
+        }
+      ],
+      "url": "https://omnigres.com",
+      "source": "https://github.com/omnigres/omnigres"
+    },
+    {
+      "name": "omni_httpd",
+      "publisher": "com.omnigres",
+      "license": "Apache-2.0",
+      "abstract": "",
+      "description": "",
+      "channels": {},
+      "tags": [],
+      "versions": [
+        {
+          "version": "0.4.11",
+          "availableFor": [
+            {
+              "flavor": "pg",
+              "arch": "aarch64",
+              "build": "6.44",
+              "postgresVersion": "17",
+              "postgresExactVersion": "17.6"
+            },
+            {
+              "flavor": "pg",
+              "arch": "x86_64",
+              "build": "6.44",
+              "postgresVersion": "17",
+              "postgresExactVersion": "17.6"
+            }
+          ]
+        }
+      ],
+      "url": "https://omnigres.com",
+      "source": "https://github.com/omnigres/omnigres"
+    },
+    {
+      "name": "omni_httpc",
+      "publisher": "com.omnigres",
+      "license": "Apache-2.0",
+      "abstract": "",
+      "description": "",
+      "channels": {},
+      "tags": [],
+      "versions": [
+        {
+          "version": "0.1.9",
+          "availableFor": [
+            {
+              "flavor": "pg",
+              "arch": "aarch64",
+              "build": "6.44",
+              "postgresVersion": "17",
+              "postgresExactVersion": "17.6"
+            },
+            {
+              "flavor": "pg",
+              "arch": "x86_64",
+              "build": "6.44",
+              "postgresVersion": "17",
+              "postgresExactVersion": "17.6"
+            }
+          ]
+        },
+        {
+          "version": "0.1.11",
+          "availableFor": [
+            {
+              "flavor": "pg",
+              "arch": "aarch64",
+              "build": "6.44",
+              "postgresVersion": "17",
+              "postgresExactVersion": "17.6"
+            },
+            {
+              "flavor": "pg",
+              "arch": "x86_64",
+              "build": "6.44",
+              "postgresVersion": "17",
+              "postgresExactVersion": "17.6"
+            }
+          ]
+        }
+      ],
+      "url": "https://omnigres.com",
+      "source": "https://github.com/omnigres/omnigres"
+    },
+    {
+      "name": "omni_session",
+      "publisher": "com.omnigres",
+      "license": "Apache-2.0",
+      "abstract": "",
+      "description": "",
+      "channels": {},
+      "tags": [],
+      "versions": [
+        {
+          "version": "0.2.0",
+          "availableFor": [
+            {
+              "flavor": "pg",
+              "arch": "aarch64",
+              "build": "6.44",
+              "postgresVersion": "17",
+              "postgresExactVersion": "17.6"
+            },
+            {
+              "flavor": "pg",
+              "arch": "x86_64",
+              "build": "6.44",
+              "postgresVersion": "17",
+              "postgresExactVersion": "17.6"
+            }
+          ]
+        }
+      ],
+      "url": "https://omnigres.com",
+      "source": "https://github.com/omnigres/omnigres"
+    },
+    {
+      "name": "omni_polyfill",
+      "publisher": "com.omnigres",
+      "license": "Apache-2.0",
+      "abstract": "",
+      "description": "",
+      "channels": {},
+      "tags": [],
+      "versions": [
+        {
+          "version": "0.2.2",
+          "availableFor": [
+            {
+              "flavor": "pg",
+              "arch": "aarch64",
+              "build": "6.44",
+              "postgresVersion": "17",
+              "postgresExactVersion": "17.6"
+            },
+            {
+              "flavor": "pg",
+              "arch": "x86_64",
+              "build": "6.44",
+              "postgresVersion": "17",
+              "postgresExactVersion": "17.6"
+            }
+          ]
+        }
+      ],
+      "url": "https://omnigres.com",
+      "source": "https://github.com/omnigres/omnigres"
+    },
+    {
+      "name": "omni_sql",
+      "publisher": "com.omnigres",
+      "license": "Apache-2.0",
+      "abstract": "",
+      "description": "",
+      "channels": {},
+      "tags": [],
+      "versions": [
+        {
+          "version": "0.5.3",
+          "availableFor": [
+            {
+              "flavor": "pg",
+              "arch": "aarch64",
+              "build": "6.44",
+              "postgresVersion": "17",
+              "postgresExactVersion": "17.6"
+            },
+            {
+              "flavor": "pg",
+              "arch": "x86_64",
+              "build": "6.44",
+              "postgresVersion": "17",
+              "postgresExactVersion": "17.6"
+            }
+          ]
+        }
+      ],
+      "url": "https://omnigres.com",
+      "source": "https://github.com/omnigres/omnigres"
+    },
+    {
+      "name": "omni_credentials",
+      "publisher": "com.omnigres",
+      "license": "Apache-2.0",
+      "abstract": "",
+      "description": "",
+      "channels": {},
+      "tags": [],
+      "versions": [
+        {
+          "version": "0.2.0",
+          "availableFor": [
+            {
+              "flavor": "pg",
+              "arch": "aarch64",
+              "build": "6.44",
+              "postgresVersion": "17",
+              "postgresExactVersion": "17.6"
+            },
+            {
+              "flavor": "pg",
+              "arch": "x86_64",
+              "build": "6.44",
+              "postgresVersion": "17",
+              "postgresExactVersion": "17.6"
+            }
+          ]
+        }
+      ],
+      "url": "https://omnigres.com",
+      "source": "https://github.com/omnigres/omnigres"
+    },
+    {
+      "name": "omni_email",
+      "publisher": "com.omnigres",
+      "license": "Apache-2.0",
+      "abstract": "",
+      "description": "",
+      "channels": {},
+      "tags": [],
+      "versions": [
+        {
+          "version": "0.1.0",
+          "availableFor": [
+            {
+              "flavor": "pg",
+              "arch": "aarch64",
+              "build": "6.44",
+              "postgresVersion": "17",
+              "postgresExactVersion": "17.6"
+            },
+            {
+              "flavor": "pg",
+              "arch": "x86_64",
+              "build": "6.44",
+              "postgresVersion": "17",
+              "postgresExactVersion": "17.6"
+            }
+          ]
+        }
+      ],
+      "url": "https://omnigres.com",
+      "source": "https://github.com/omnigres/omnigres"
+    },
+    {
+      "name": "omni_python",
+      "publisher": "com.omnigres",
+      "license": "Apache-2.0",
+      "abstract": "",
+      "description": "",
+      "channels": {},
+      "tags": [],
+      "versions": [
+        {
+          "version": "0.1.1",
+          "availableFor": [
+            {
+              "flavor": "pg",
+              "arch": "aarch64",
+              "build": "6.44",
+              "postgresVersion": "17",
+              "postgresExactVersion": "17.6"
+            },
+            {
+              "flavor": "pg",
+              "arch": "x86_64",
+              "build": "6.44",
+              "postgresVersion": "17",
+              "postgresExactVersion": "17.6"
+            }
+          ]
+        }
+      ],
+      "url": "https://omnigres.com",
+      "source": "https://github.com/omnigres/omnigres"
+    },
+    {
+      "name": "omni_ledger",
+      "publisher": "com.omnigres",
+      "license": "Apache-2.0",
+      "abstract": "",
+      "description": "",
+      "channels": {},
+      "tags": [],
+      "versions": [
+        {
+          "version": "0.1.3",
+          "availableFor": [
+            {
+              "flavor": "pg",
+              "arch": "aarch64",
+              "build": "6.44",
+              "postgresVersion": "17",
+              "postgresExactVersion": "17.6"
+            },
+            {
+              "flavor": "pg",
+              "arch": "x86_64",
+              "build": "6.44",
+              "postgresVersion": "17",
+              "postgresExactVersion": "17.6"
+            }
+          ]
+        }
+      ],
+      "url": "https://omnigres.com",
+      "source": "https://github.com/omnigres/omnigres"
+    },
+    {
+      "name": "omni_test",
+      "publisher": "com.omnigres",
+      "license": "Apache-2.0",
+      "abstract": "",
+      "description": "",
+      "channels": {},
+      "tags": [],
+      "versions": [
+        {
+          "version": "0.4.0",
+          "availableFor": [
+            {
+              "flavor": "pg",
+              "arch": "aarch64",
+              "build": "6.44",
+              "postgresVersion": "17",
+              "postgresExactVersion": "17.6"
+            },
+            {
+              "flavor": "pg",
+              "arch": "x86_64",
+              "build": "6.44",
+              "postgresVersion": "17",
+              "postgresExactVersion": "17.6"
+            }
+          ]
+        }
+      ],
+      "url": "https://omnigres.com",
+      "source": "https://github.com/omnigres/omnigres"
+    },
+    {
+      "name": "omni",
+      "publisher": "com.omnigres",
+      "license": "Apache-2.0",
+      "abstract": "",
+      "description": "",
+      "channels": {},
+      "tags": [],
+      "versions": [
+        {
+          "version": "0.2.14",
+          "availableFor": [
+            {
+              "flavor": "pg",
+              "arch": "aarch64",
+              "build": "6.44",
+              "postgresVersion": "17",
+              "postgresExactVersion": "17.6"
+            },
+            {
+              "flavor": "pg",
+              "arch": "x86_64",
+              "build": "6.44",
+              "postgresVersion": "17",
+              "postgresExactVersion": "17.6"
+            }
+          ]
+        }
+      ],
+      "url": "https://omnigres.com",
+      "source": "https://github.com/omnigres/omnigres"
+    },
+    {
+      "name": "omni_aws",
+      "publisher": "com.omnigres",
+      "license": "Apache-2.0",
+      "abstract": "",
+      "description": "",
+      "channels": {},
+      "tags": [],
+      "versions": [
+        {
+          "version": "0.1.2",
+          "availableFor": [
+            {
+              "flavor": "pg",
+              "arch": "aarch64",
+              "build": "6.44",
+              "postgresVersion": "17",
+              "postgresExactVersion": "17.6"
+            },
+            {
+              "flavor": "pg",
+              "arch": "x86_64",
+              "build": "6.44",
+              "postgresVersion": "17",
+              "postgresExactVersion": "17.6"
+            }
+          ]
+        }
+      ],
+      "url": "https://omnigres.com",
+      "source": "https://github.com/omnigres/omnigres"
+    },
+    {
+      "name": "omni_shmem",
+      "publisher": "com.omnigres",
+      "license": "Apache-2.0",
+      "abstract": "",
+      "description": "",
+      "channels": {},
+      "tags": [],
+      "versions": [
+        {
+          "version": "0.1.0",
+          "availableFor": [
+            {
+              "flavor": "pg",
+              "arch": "aarch64",
+              "build": "6.44",
+              "postgresVersion": "17",
+              "postgresExactVersion": "17.6"
+            },
+            {
+              "flavor": "pg",
+              "arch": "x86_64",
+              "build": "6.44",
+              "postgresVersion": "17",
+              "postgresExactVersion": "17.6"
+            }
+          ]
+        }
+      ],
+      "url": "https://omnigres.com",
+      "source": "https://github.com/omnigres/omnigres"
+    }
+  ],
+  "publishers": [
+    {
+      "name": "Omnigres",
+      "id": "com.omnigres",
+      "email": "contact@omnigres.com",
+      "url": "https://omnigres.com",
+      "publicKey": "-----BEGIN PUBLIC KEY-----\nMIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEAxCAHUZS3wyKz6k1eH54F\nnO0FUybWUhuIZFcv352h4tYG0PMJRPtW8WgqIyQBWqWuWz9au3g0UCMXXHXDaoLZ\nqSqYXsvpHV4W79TpPnq0omkF9zQyPWRFww3nQ6CXtIUQRIyLgIp8hH/Ns+yrKC3N\n7WI5bGKNKLnidg1lTwU97GtjHptk8UQmNjOWYaIu+R0/mIvjmlwx4wsBknHwSGKa\nL8GWe4YlHuRm03+UlE9BGlgZ6x2fg1n+TE3IPTwAgcDJPZlwZ48kzK7uBafOZRlY\nN9J4GrVXYZTYyvJHyZg+oKxt7LChsHvCqeXHbhxciONYLWFPTgUwBG9bRn0vJE2I\nt9LidrUyYwF/AKsFrHs+0uPrVGQJd4Mjvu8dmxt3eF0YURhD7taC+Pq0rxei05nC\nomO0VqYRk/bjClrhDJkwEU6xWMJfJSuYGX1KTim3w+jr6n9xJRq2ZgJ5hP3/8N4p\nrviKriN7y/CYXUzy4fR09bbIHpScot8/wBdqbKlN9Bf4tTYdLQgZmr5M67t6L7BD\naZ3aU0Oz6CsWNCyT6+izdfRNBpoOedmvbGKXhX9KGdNT6jMjG8Dl6F61SX5MT9Di\nTDZKjoekthwdsEwpRT55wf5RWbbfz/8n1Z1tBk1agmawT08xZSEvu43wU/trJD7H\nIPdPlpo+dRYqDhT7UkZx3kMCAwEAAQ==\n-----END PUBLIC KEY-----\n"
+    }
+  ]
+}
